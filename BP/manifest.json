@@ -1,0 +1,37 @@
+{
+  "format_version": 2,
+  "metadata": {
+    "authors": ["KiwiQuan"],
+    "generated_with": {
+      "bridge": ["2.7.54"],
+      "dash": ["0.11.7"]
+    }
+  },
+  "header": {
+    "name": "Immersive Villagers",
+    "description": "This addon gives the villagers the ability to learn, adapt, build and talk to players! It uses a local Backend system that can take raw information from the game (example: events, what the villager sees via raycasting to identify structures, chat messages, etc.) and identify patterns like a real human, a lightweight LLM (llama.cpp) ran locally for reasoning and chatting and A local database to store villager memories. you need to install Postgresql for database and Express.js for this addon to fully work.",
+    "min_engine_version": [1, 26, 0],
+    "uuid": "089b75a1-8183-4026-8c59-d8fd73940ded",
+    "version": [1, 0, 0]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "3651926c-576e-4b68-a1fa-bc6a02f47666",
+      "version": [1, 0, 0]
+    },
+    {
+      "type": "script",
+      "language": "javascript",
+      "uuid": "2a4600c1-77bb-4011-8dbe-f25340a38404",
+      "entry": "scripts/main.js",
+      "version": [1, 0, 0]
+    }
+  ],
+  "dependencies": [
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.7.0-beta"
+    }
+  ]
+}

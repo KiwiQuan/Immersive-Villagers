@@ -1,0 +1,43 @@
+{
+	"type": "minecraftBedrock",
+	"name": "Immersive Villagers",
+	"namespace": "bridge",
+	"authors": [
+		"KiwiQuan"
+	],
+	"targetVersion": "1.26.0",
+	"description": "This addon gives the villagers the ability to learn, adapt, build and talk to players! It uses a local Backend system that can take raw information from the game (example: events, what the villager sees via raycasting to identify structures, chat messages, etc.) and identify patterns like a real human, a lightweight LLM (llama.cpp) ran locally for reasoning and chatting and A local database to store villager memories. you need to install Postgresql for database and Express.js for this addon to fully work.",
+	"experimentalGameplay": {
+		"upcomingCreatorFeatures": true,
+		"experimentalCreatorCameraFeatures": false,
+		"enableGameTestFramework": true,
+		"renderDragonFeatures": false,
+		"educationEdition": false
+	},
+	"bdsProject": true,
+	"packs": {
+		"behaviorPack": "./BP"
+	},
+	"worlds": [
+		"./worlds/*"
+	],
+	"compiler": {
+		"plugins": [
+			"generatorScripts",
+			"typeScript",
+			"entityIdentifierAlias",
+			"customEntityComponents",
+			"customItemComponents",
+			"customBlockComponents",
+			"customCommands",
+			"moLang",
+			"formatVersionCorrection",
+			[
+				"simpleRewrite",
+				{
+					"packName": "Immersive Villagers"
+				}
+			]
+		]
+	}
+}
