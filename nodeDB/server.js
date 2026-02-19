@@ -1,80 +1,99 @@
-import express from "express";
-import morgan from "morgan";
-import * as queries from "#db/queries/queries";
+import { WebSocketServer } from "ws";
+import { createServer } from "http";
+import { v4 as uuidv4 } from "uuid";
+import * as queries from "#db/queries/queries"; // Adjust path as needed
 
-const app = express();
+const server = createServer();
+const wss = new WebSocketServer({ server });
 
-app.use(morgan("dev"));
-app.use(express.json());
+wss.on("connection", (ws) => {
+  console.log("§a✓ Minecraft client connected");
 
-const PORT = process.env.PORT || 3000;
+  // 1. Tell Minecraft to send us chat messages (so we hear world.sendMessage)
+  ws.send(
+    JSON.stringify({
+      header: {
+        version: 1,
+        requestId: uuidv4(),
+        messagePurpose: "subscribe",
+        messageType: "commandRequest",
+      },
+      body: { eventName: "PlayerMessage" },
+    }),
+  );
 
-app.get("/api/test", async (req, res) => {
-  try {
-    const rows = await queries.getAllRows();
-    res.json({ success: true, data: rows });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+  // 2. Send the Handshake success back to the Script API
+  sendCommand(ws, `/scriptevent db:handshake {"status":"connected"}`);
 
-app.get("/api/test/:id", async (req, res) => {
-  try {
-    const row = await queries.getRowById(req.params.id);
-    if (!row) {
-      return res.status(404).json({ success: false, error: "Row not found" });
+  ws.on("message", async (packet) => {
+    const msg = JSON.parse(packet.toString());
+    
+    console.log("📩 Received message type:", msg.header?.messagePurpose, msg.header?.eventName);
+
+    // Check if this is a message from the Script API (world.sendMessage)
+    if (msg.header?.eventName === "PlayerMessage") {
+      const chatContent = msg.body?.message;
+      console.log("💬 Chat message:", chatContent);
+
+      try {
+        // Extract JSON from chat message (remove player name prefix like "[kw132275] ")
+        const jsonMatch = chatContent.match(/\{.*\}/);
+        if (!jsonMatch) {
+          console.log("⚠️  No JSON found in message");
+          return;
+        }
+        
+        const data = JSON.parse(jsonMatch[0]);
+        console.log("✓ Parsed Query:", data.action);
+
+        let result;
+        if (data.action === "read") {
+          console.log("📖 Querying database...");
+          const rows = await queries.getAllRows();
+          console.log(`✓ Found ${rows.length} rows`);
+          result = { type: "read_result", success: true, data: rows };
+        } else if (data.action === "create") {
+          console.log("➕ Creating record...");
+          const row = await queries.createRow(data.name, data.age);
+          console.log(`✓ Created: ${row.name}`);
+          result = { type: "create_result", success: true, data: row };
+        } else if (data.action === "delete") {
+          console.log("🗑️  Deleting record...");
+          const row = await queries.deleteRow(data.id);
+          if (row) {
+            console.log(`✓ Deleted: ${row.name}`);
+            result = { type: "delete_result", success: true, data: row };
+          } else {
+            console.log("✗ Record not found");
+            result = { type: "error", success: false, error: "Record not found" };
+          }
+        }
+
+        // Send the result back to the Script API
+        if (result) {
+          console.log("📤 Sending result back to Minecraft...");
+          sendCommand(ws, `/scriptevent db:result ${JSON.stringify(result)}`);
+        }
+      } catch (e) {
+        console.log("⚠️  Not a JSON message (probably player chat)");
+      }
     }
-    res.json({ success: true, data: row });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  });
 });
 
-app.post("/api/test", async (req, res) => {
-  try {
-    const { name, age } = req.body;
-    if (!name || !age) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Name and age are required" });
-    }
-    const row = await queries.createRow(name, age);
-    res.status(201).json({ success: true, data: row });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+// Helper to send commands into the game
+function sendCommand(ws, cmd) {
+  ws.send(
+    JSON.stringify({
+      header: {
+        version: 1,
+        requestId: uuidv4(),
+        messagePurpose: "commandRequest",
+        messageType: "commandRequest",
+      },
+      body: { version: 1, commandLine: cmd },
+    }),
+  );
+}
 
-app.put("/api/test/:id", async (req, res) => {
-  try {
-    const { name, age } = req.body;
-    if (!name || !age) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Name and age are required" });
-    }
-    const row = await queries.updateRow(req.params.id, name, age);
-    if (!row) {
-      return res.status(404).json({ success: false, error: "Row not found" });
-    }
-    res.json({ success: true, data: row });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.delete("/api/test/:id", async (req, res) => {
-  try {
-    const row = await queries.deleteRow(req.params.id);
-    if (!row) {
-      return res.status(404).json({ success: false, error: "Row not found" });
-    }
-    res.json({ success: true, data: row });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+server.listen(3000, () => console.log("Server running on port 3000"));
