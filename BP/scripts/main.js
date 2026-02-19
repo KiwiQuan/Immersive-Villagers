@@ -32,6 +32,13 @@ system.afterEvents.scriptEventReceive.subscribe((event) => {
     const count = db.count();
     sourceEntity.sendMessage(`§eDatabase has §f${count}§e records`);
   }
+  if (id === "db:help" && sourceEntity) {
+    sourceEntity.sendMessage("§e=== Database Commands ===");
+    sourceEntity.sendMessage("§a/db:seed - Seed database with initial data");
+    sourceEntity.sendMessage("§a/db:clear - Clear all records");
+    sourceEntity.sendMessage("§a/db:count - Show record count");
+    sourceEntity.sendMessage("§a/db:help - Show this help message");
+  }
 });
 
 world.afterEvents.itemUse.subscribe((event) => {
