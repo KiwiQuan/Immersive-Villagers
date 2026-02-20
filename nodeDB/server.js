@@ -9,7 +9,7 @@ const wss = new WebSocketServer({ server });
 wss.on("connection", (ws) => {
   console.log("§a✓ Minecraft client connected");
 
-  // 1. Tell Minecraft to send us chat messages (so we hear world.sendMessage)
+  // 1. Subscribe to ScriptEvent (for silent communication)
   ws.send(
     JSON.stringify({
       header: {
@@ -18,7 +18,7 @@ wss.on("connection", (ws) => {
         messagePurpose: "subscribe",
         messageType: "commandRequest",
       },
-      body: { eventName: "PlayerMessage" },
+      body: { eventName: "ScriptEvent" },
     }),
   );
 
@@ -27,8 +27,13 @@ wss.on("connection", (ws) => {
 
   ws.on("message", async (packet) => {
     const msg = JSON.parse(packet.toString());
-    
-    console.log("📩 Received message type:", msg.header?.messagePurpose, msg.header?.eventName);
+    console.log(msg);
+
+    console.log(
+      "📩 Received message type:",
+      msg.header?.messagePurpose,
+      msg.header?.eventName,
+    );
 
     // Check if this is a message from the Script API (world.sendMessage)
     if (msg.header?.eventName === "PlayerMessage") {
@@ -42,7 +47,7 @@ wss.on("connection", (ws) => {
           console.log("⚠️  No JSON found in message");
           return;
         }
-        
+
         const data = JSON.parse(jsonMatch[0]);
         console.log("✓ Parsed Query:", data.action);
 
@@ -65,7 +70,11 @@ wss.on("connection", (ws) => {
             result = { type: "delete_result", success: true, data: row };
           } else {
             console.log("✗ Record not found");
-            result = { type: "error", success: false, error: "Record not found" };
+            result = {
+              type: "error",
+              success: false,
+              error: "Record not found",
+            };
           }
         }
 
