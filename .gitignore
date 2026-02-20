@@ -5,3 +5,7 @@ Desktop.ini
 !.bridge/compiler/
 !.bridge/extensions
 builds
+nodeDB/.env
+nodeDB/node_modules
+node_modules
+.env
