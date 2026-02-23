@@ -19,8 +19,8 @@ This project implements a modular cognitive architecture for Minecraft Bedrock E
 4. **Working Memory:** The "Conscious" state, tracking active focus, short-term shocks, and recent vector inputs using **DynamicProperties** for instant access.
 5. **Long-Term Memory:** A subjective **PostgreSQL** database of relationships and learned concepts.
 6. **Language Cortex (Executive):** The LLM (llama.cpp) that handles "Internal Monologue" and decision-making.
-7. **Brain Scheduler (Infrastructure):** Optimizes LLM calls via batching and prioritization to prevent server lag.
-8. **Action Layer (The Body):** Translates intent into Bedrock Script API commands, using **DynamicProperties** to store current task states (e.g., `is_moving`, `target_block`).
+   (Infrastructure) **Brain Scheduler (Infrastructure):** Optimizes LLM calls via batching and prioritization to prevent server lag.
+7. **Action Layer (The Body):** Translates intent into Bedrock Script API commands, using **DynamicProperties** to store current task states (e.g., `is_moving`, `target_block`).
 
 ---
 
