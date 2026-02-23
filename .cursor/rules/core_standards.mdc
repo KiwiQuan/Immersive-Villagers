@@ -42,13 +42,21 @@ Telemetry: All external communication via @minecraft/server-net must be wrapped 
 
 Code Style & Structure:
 
-Functional Programming: Prefer pure functions and declarative patterns. Avoid classes unless representing a specific game-state object.
+Functional Programming: Prefer pure functions and declarative patterns. Avoid classes
 
 File Limits: No file should exceed 500 lines. Break modules into sub-files if they grow too large.
 
 JSDoc Documentation: Every function must have a JSDoc block describing its purpose, @param types, and @returns value.
 
 Naming: Use camelCase for variables/functions and PascalCase for constants or exported modules. Use auxiliary verbs for booleans (e.g., isAlive, hasTarget).
+
+Prefer iteration and modularization over code duplication.
+
+Avoid enums; use maps instead.
+
+Use the "function" keyword for pure functions.
+
+Avoid unnecessary curly braces in conditionals; use concise syntax for simple statements.
 
 Errors: Throw meaningful Error objects instead of returning null or undefined for critical failures.
 
