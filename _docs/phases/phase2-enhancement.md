@@ -756,32 +756,174 @@ function showLiveState(player, villager) {
 
 ---
 
-## Feature 10: Multi-Event LLM Prompts
+## Feature 10: Multi-Event LLM Prompts with Context Assembly
 
-**Goal:** LLM receives context from multiple event types
+**Goal:** LLM receives optimally selected context from multiple event types
 
 ### Steps:
 1. Update `nodeDB/brain/prompt_builder.js` to handle diverse episodes
-2. Add event type descriptions: "building session", "chat conversation", "combat encounter"
-3. Enhance prompt with recent event summaries (last 5 episodes, diverse types)
-4. Test LLM responses to mixed event contexts
-5. Validate contextual consistency across event types
+2. Implement context assembly logic: Score memories by Recency, Intensity, and Semantic Similarity to current vector
+3. Add context window management: Summarize older episodes to stay within token limits (512 tokens)
+4. Add event type descriptions: "building session", "chat conversation", "combat encounter"
+5. Test LLM responses with optimized context selection and validate consistency
 
-**Enhanced Prompt:**
+**Context Assembly Logic:**
+```javascript
+// nodeDB/brain/context_assembler.js
+
+/**
+ * Scores an episode based on recency, intensity, and semantic similarity.
+ * @param {Object} episode - Episode from database
+ * @param {Object} currentVector - Current [C,V,I,S,X] vector
+ * @returns {number} Score (0.0 to 1.0)
+ */
+function scoreMemory(episode, currentVector) {
+  const now = Date.now();
+  const age = now - episode.timestamp;
+  
+  // Recency score (exponential decay: 24 hours = 0.5)
+  const recencyScore = Math.exp(-age / (24 * 60 * 60 * 1000));
+  
+  // Intensity score (based on I axis)
+  const intensityScore = Math.abs(episode.vector_i);
+  
+  // Semantic similarity (cosine similarity of vectors)
+  const similarity = cosineSimilarity(
+    [episode.vector_c, episode.vector_v, episode.vector_i, episode.vector_s, episode.vector_x],
+    [currentVector.C, currentVector.V, currentVector.I, currentVector.S, currentVector.X]
+  );
+  const semanticScore = (similarity + 1) / 2; // Normalize to 0-1
+  
+  // Weighted average (40% recency, 30% intensity, 30% semantic)
+  return (recencyScore * 0.4) + (intensityScore * 0.3) + (semanticScore * 0.3);
+}
+
+function cosineSimilarity(vecA, vecB) {
+  const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
+  const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
+  const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+
+/**
+ * Assembles optimal context from available memories.
+ * @param {string} villagerID - Villager entity ID
+ * @param {Object} currentVector - Current [C,V,I,S,X] vector
+ * @param {number} maxTokens - Maximum tokens for context (default 512)
+ * @returns {Promise<Array>} Scored and selected episodes
+ */
+async function assembleContext(villagerID, currentVector, maxTokens = 512) {
+  // Fetch last 50 episodes (candidate pool)
+  const episodes = await pool.query(
+    'SELECT * FROM episodes WHERE villager_id = $1 ORDER BY timestamp DESC LIMIT 50',
+    [villagerID]
+  );
+  
+  // Score all episodes
+  const scoredEpisodes = episodes.rows.map(ep => ({
+    ...ep,
+    relevanceScore: scoreMemory(ep, currentVector)
+  }));
+  
+  // Sort by relevance score (descending)
+  scoredEpisodes.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  
+  // Select episodes until token budget exhausted
+  const selectedEpisodes = [];
+  let tokenCount = 0;
+  const avgTokensPerEpisode = 30; // Rough estimate
+  
+  for (const episode of scoredEpisodes) {
+    if (tokenCount + avgTokensPerEpisode > maxTokens) break;
+    selectedEpisodes.push(episode);
+    tokenCount += avgTokensPerEpisode;
+  }
+  
+  // If we have space, add most recent episodes (recency bias)
+  const recentEpisodes = scoredEpisodes.slice(0, 3);
+  for (const recent of recentEpisodes) {
+    if (!selectedEpisodes.find(ep => ep.id === recent.id)) {
+      if (tokenCount + avgTokensPerEpisode <= maxTokens) {
+        selectedEpisodes.push(recent);
+        tokenCount += avgTokensPerEpisode;
+      }
+    }
+  }
+  
+  return selectedEpisodes.sort((a, b) => a.timestamp - b.timestamp); // Chronological order
+}
+```
+
+**Context Window Management:**
+```javascript
+// nodeDB/brain/context_summarizer.js
+
+/**
+ * Summarizes old episodes to save tokens while preserving key information.
+ * @param {Array} episodes - Episodes to summarize
+ * @returns {string} Compact summary
+ */
+function summarizeOldEpisodes(episodes) {
+  if (episodes.length === 0) return '';
+  
+  // Group by day
+  const grouped = {};
+  for (const ep of episodes) {
+    const date = new Date(ep.timestamp).toDateString();
+    if (!grouped[date]) grouped[date] = [];
+    grouped[date].push(ep);
+  }
+  
+  const summaries = [];
+  for (const [date, dayEpisodes] of Object.entries(grouped)) {
+    const avgC = average(dayEpisodes.map(e => e.vector_c));
+    const avgS = average(dayEpisodes.map(e => e.vector_s));
+    const eventCount = dayEpisodes.length;
+    
+    summaries.push(`${date}: ${eventCount} interactions (C:${avgC.toFixed(1)}, S:${avgS.toFixed(1)})`);
+  }
+  
+  return summaries.join(', ');
+}
+
+/**
+ * Counts approximate tokens in a string.
+ * @param {string} text - Text to count
+ * @returns {number} Approximate token count
+ */
+function estimateTokenCount(text) {
+  // Rough estimate: 1 token ≈ 4 characters
+  return Math.ceil(text.length / 4);
+}
+```
+
+**Enhanced Prompt with Context Assembly:**
 ```javascript
 function buildPrompt(villagerContext) {
-  const { villagerID, recentEpisodes, relationshipScore, identityTags, gossip } = villagerContext;
+  const { villagerID, currentVector, relationshipScore, identityTags, gossip } = villagerContext;
   
-  const episodeDescriptions = recentEpisodes.map(ep => {
+  // Assemble optimal context
+  const selectedEpisodes = await assembleContext(villagerID, currentVector, 512);
+  
+  // Separate recent (last 5) from older
+  const recentEpisodes = selectedEpisodes.slice(-5);
+  const olderEpisodes = selectedEpisodes.slice(0, -5);
+  
+  // Format recent episodes in detail
+  const recentDescriptions = recentEpisodes.map(ep => {
     const type = classifyEpisode(ep);
     return `- ${type}: C=${ep.vector_c.toFixed(1)}, V=${ep.vector_v.toFixed(1)}, S=${ep.vector_s.toFixed(1)} (${formatDuration(ep.duration)})`;
   }).join('\n');
   
-  return `You are Villager ${villagerID}. You are observing Player ${villagerContext.actorID}.
+  // Summarize older episodes
+  const olderSummary = summarizeOldEpisodes(olderEpisodes);
+  
+  const prompt = `You are Villager ${villagerID}. You are observing Player ${villagerContext.actorID}.
 
-Recent Activity:
-${episodeDescriptions}
+Recent Activity (Last 5):
+${recentDescriptions}
 
+${olderSummary ? `Earlier Memories:\n${olderSummary}\n` : ''}
 What You've Been Told:
 ${gossip.map(g => `- ${g.fact}`).join('\n')}
 
@@ -802,6 +944,16 @@ Based on this context, generate a JSON response:
 }
 
 Response (JSON only):`;
+  
+  // Verify token count
+  const tokenCount = estimateTokenCount(prompt);
+  if (tokenCount > 512) {
+    logger.warn({ villagerID, tokenCount }, '[Prompt Builder] Token limit exceeded, truncating');
+    // Fallback: Use only recent 3 episodes
+    return buildMinimalPrompt(villagerContext);
+  }
+  
+  return prompt;
 }
 
 function classifyEpisode(episode) {
@@ -814,10 +966,17 @@ function classifyEpisode(episode) {
 }
 ```
 
+**Files Created:**
+- `nodeDB/brain/context_assembler.js`
+- `nodeDB/brain/context_summarizer.js`
+
 **Validation:**
 - Recent episodes include building + chat → LLM responds appropriately
 - High trust score → LLM generates friendly responses
 - Identity tags → LLM maintains personality consistency
+- Similar past event → Memory with high semantic similarity score selected
+- Token count stays under 512 → Older episodes summarized, not truncated
+- Context assembly prioritizes most relevant memories over chronological order
 
 ---
 
@@ -831,6 +990,8 @@ function classifyEpisode(episode) {
 | Gossip write latency | <150ms | HTTP POST + DB write |
 | Identity analysis time | <500ms | Batch every 5 episodes |
 | Memory fetch latency | <100ms | 10 episodes from DB |
+| Context assembly time | <200ms | Score 50 memories, select best |
+| Prompt token count | <512 tokens | Ensure LLM context fits |
 
 ---
 
@@ -849,6 +1010,8 @@ function classifyEpisode(episode) {
 - Complete interaction flow: Hub → Gossip → Whisper → Back
 - LLM with gossip: Verify gossip appears in prompt
 - Memory viewer: Fetch 20 episodes, verify pagination
+- Context assembly: Create 50 episodes, verify highest scored memories selected
+- Token management: Verify prompts with 100+ episodes stay under 512 tokens
 
 ---
 
