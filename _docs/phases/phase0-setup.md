@@ -1,359 +1,326 @@
-# Phase 0: Setup — Barebones Infrastructure
+# 🔧 Phase 0: Setup (Infrastructure Foundation)
 
-**Status:** Foundation Phase  
-**Goal:** Establish minimal infrastructure to run and test basic connectivity  
-**Deliverable:** Backend and database running, Script API can send HTTP requests  
-**Duration Target:** 2-3 implementation sessions
+## Goal
 
----
-
-## Overview
-
-This phase establishes the foundational infrastructure needed for all subsequent development. The system will be non-functional for gameplay but will have all core services running and communicating.
-
-**Success Criteria:**
-- PostgreSQL database initialized with schema
-- Node.js backend responding to health checks
-- llama.cpp server running and responding to test prompts
-- Script API can send HTTP requests to backend
-- Basic logging operational
+Establish the **barebones infrastructure** required for the Immersive Villager AI system. This phase creates a functional but minimal skeleton that validates network communication and database connectivity, but is **not yet usable** for gameplay.
 
 ---
 
-## Feature 1: Database Infrastructure
+## Success Criteria
 
-**Goal:** PostgreSQL database operational with initial schema
-
-### Steps:
-1. Install PostgreSQL 15+ and create `villager_memory` database
-2. Create database user `minecraft_ai` with appropriate permissions
-3. Execute `schema.sql` to create tables: `episodes`, `relationships`, `working_memory`, `identity_tags`
-4. Verify tables created with correct indexes (villager_id, timestamp)
-5. Test connection with `psql` and run sample INSERT/SELECT queries
-
-**Files Created:**
-- `nodeDB/db/schema.sql`
-- `nodeDB/db/pool.js`
-
-**Validation:**
-```sql
--- Test query
-SELECT * FROM episodes LIMIT 1;
-SELECT * FROM relationships LIMIT 1;
-```
+- PostgreSQL database is running with base schema applied
+- Node.js backend responds to test HTTP requests
+- llama.cpp server is running and returns completions
+- Script API can send/receive HTTP requests via `@minecraft/server-net`
+- DynamicProperties schema is defined and tested
+- DEBUG_MODE toggle is functional in-game
 
 ---
 
-## Feature 2: Node.js Backend Bootstrap
+## Feature 1: PostgreSQL Database Setup
 
-**Goal:** Express server running with basic health check endpoint
+**Deliverable:** Running PostgreSQL instance with base schema tables for episodes, relationships, and working memory.
 
-### Steps:
-1. Initialize Node.js project: `npm init -y` in `nodeDB/` directory
-2. Install core dependencies: `express`, `pg`, `pino`, `axios`, `dotenv`
-3. Create `app.js` with Express initialization and basic middleware
-4. Implement `/api/health` endpoint that returns backend status
-5. Create `.env` file with database credentials and configuration
+### Steps
 
-**Files Created:**
-- `nodeDB/package.json`
-- `nodeDB/.env`
-- `nodeDB/app.js`
-- `nodeDB/server.js`
-- `nodeDB/utils/logger.js`
+1. **Install PostgreSQL 15+ and create database**
+   - Install PostgreSQL on host machine
+   - Create `villager_memory` database
+   - Create `minecraft_ai` user with secure password
+   - Grant permissions to user
 
-**Validation:**
-```bash
-# Start backend
-cd nodeDB && node server.js
+2. **Create base schema file (`nodeDB/db/schema.sql`)**
+   - Define `episodes` table (villager_id, actor_id, vector_c/v/i/s/x, duration, event_count, seal_reason, timestamp)
+   - Define `relationships` table (villager_id, actor_id, interaction_count, trust_score, last_interaction)
+   - Define `working_memory` table (villager_id, mood_c/v/i/s/x, current_focus, shock_state, last_update)
+   - Define `concepts` table (concept_id, name, vector_signature, discovery_count)
+   - Add indexes on villager_id and timestamp columns
 
-# Test health check
-curl http://localhost:3000/api/health
-```
+3. **Apply schema to database**
+   - Run schema.sql using psql command
+   - Verify tables exist with `\dt` command
+   - Test INSERT/SELECT operations manually
 
-**Expected Response:**
-```json
-{
-  "status": "healthy",
-  "services": {
-    "database": "connected",
-    "llm": "not_configured"
-  },
-  "timestamp": 1708718400000
-}
-```
+4. **Create pg-pool configuration (`nodeDB/db/pool.js`)**
+   - Initialize connection pool with max 20 connections
+   - Set idle timeout (30s) and connection timeout (2s)
+   - Add error event listeners for pool monitoring
+   - Export pool instance for use in queries
+
+5. **Test database connectivity**
+   - Write simple Node.js script to connect to pool
+   - Execute test INSERT into episodes table
+   - Execute test SELECT to verify data
+   - Verify connection pooling works (multiple concurrent queries)
 
 ---
 
-## Feature 3: LLM Server Setup
+## Feature 2: Node.js Backend Skeleton
 
-**Goal:** llama.cpp server operational and responding to test prompts
+**Deliverable:** Express server with health check endpoint and basic route structure.
 
-### Steps:
-1. Download and compile llama.cpp from source
-2. Download quantized model (Llama 3 7B Q4_K_M recommended)
-3. Start llama.cpp server with config: `./server -m model.gguf -c 2048 --port 8080 --threads 4`
-4. Test with curl: send completion request with simple prompt
-5. Verify response time (<3 seconds) and valid JSON output
+### Steps
 
-**Files Created:**
-- `llama.cpp/` (external directory)
-- `llama.cpp/models/llama-3-7b-q4_k_m.gguf`
-- `nodeDB/brain/llm_client.js`
+1. **Initialize Node.js project (`nodeDB/`)**
+   - Create package.json with dependencies (express, pg, pino, axios, dotenv)
+   - Create .env file with database credentials and configuration
+   - Create .gitignore to exclude node_modules and .env
+   - Run npm install to download dependencies
 
-**Validation:**
-```bash
-# Test llama.cpp directly
-curl http://localhost:8080/completion \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Say hello", "n_predict": 20}'
+2. **Create Express app (`nodeDB/app.js`)**
+   - Initialize Express with JSON body parser (1mb limit)
+   - Add basic middleware stack (logger, error handler)
+   - Define route structure (/api/memory, /api/brain, /api/debug)
+   - Export app instance
 
-# Expected: Response with generated text in <3 seconds
-```
+3. **Create health check endpoint (`nodeDB/routes/debug.js`)**
+   - GET /api/health returns { status: "online", timestamp }
+   - Test database connection and return pool stats
+   - Test llama.cpp connection (if available)
+   - Return comprehensive health status
+
+4. **Create Pino logger (`nodeDB/utils/logger.js`)**
+   - Initialize Pino with level from LOG_LEVEL env var
+   - Configure pino-pretty for development mode
+   - Add log rotation setup (10MB files, daily rotation)
+   - Export logger instance
+
+5. **Start server and test (`nodeDB/server.js`)**
+   - Create server.js that imports app and starts listening on port 3000
+   - Test health endpoint with curl command
+   - Verify logs are written to console/file
+   - Confirm graceful shutdown on SIGTERM/SIGINT
+
+---
+
+## Feature 3: llama.cpp LLM Server Setup
+
+**Deliverable:** Running llama.cpp server that responds to completion requests.
+
+### Steps
+
+1. **Download and build llama.cpp**
+   - Clone llama.cpp repository from GitHub
+   - Run make command to compile for host platform
+   - Verify compilation succeeded (./server binary exists)
+   - Test basic inference with sample model
+
+2. **Download Llama 3.1 8B Q4_K_M model**
+   - Download model file from HuggingFace (approx 5GB)
+   - Save to models/ directory in llama.cpp folder
+   - Verify file integrity (check file size matches expected)
+   - Test model loading with ./server command
+
+3. **Start llama.cpp server**
+   - Run server with context length 2048, port 8080, 4-8 threads
+   - Verify server starts without errors
+   - Check memory usage (should be 5-6GB)
+   - Confirm server is listening on localhost:8080
+
+4. **Create LLM client wrapper (`nodeDB/brain/llm_client.js`)**
+   - Create callLLM() function that posts to localhost:8080/completion
+   - Set timeout to 10 seconds
+   - Parse response and extract content field
+   - Add error handling for connection failures
+
+5. **Test LLM inference**
+   - Send test prompt "You are a villager. Say hello."
+   - Verify response is received within 2-4 seconds
+   - Test with longer prompts (512 tokens)
+   - Confirm JSON parsing works correctly
 
 ---
 
 ## Feature 4: Script API HTTP Communication
 
-**Goal:** Minecraft Script API can send HTTP requests to backend
+**Deliverable:** Script API can send HTTP requests to Node.js backend and receive responses.
 
-### Steps:
-1. Create minimal behavior pack with `manifest.json` and dependencies
-2. Add `@minecraft/server` and `@minecraft/server-net` dependencies
-3. Create `scripts/main.js` with world load event handler
-4. Implement test HTTP POST to `/api/health` on world load
-5. Verify request appears in backend logs (Pino)
+### Steps
 
-**Files Created:**
-- `manifest.json`
-- `scripts/main.js`
-- `scripts/utils/http_client.js`
+1. **Create test script (`scripts/test_http.js`)**
+   - Import @minecraft/server-net http module
+   - Create function to POST test data to /api/health
+   - Parse response body and log result
+   - Add error handling for network failures
 
-**Validation:**
-```javascript
-// In scripts/main.js
-import { world } from '@minecraft/server';
-import { http } from '@minecraft/server-net';
+2. **Test POST request to backend**
+   - Start Node.js backend on port 3000
+   - Run test script in Minecraft server
+   - Verify request reaches backend (check Pino logs)
+   - Confirm response is received in Script API
 
-world.afterEvents.worldInitialize.subscribe(() => {
-  http.get('http://localhost:3000/api/health')
-    .then(response => {
-      console.warn('[Setup] Backend health check:', response.body);
-    })
-    .catch(err => {
-      console.error('[Setup] Backend unreachable:', err.message);
-    });
-});
-```
+3. **Test GET request from backend**
+   - Create test endpoint in backend (GET /api/test)
+   - Send GET request from Script API
+   - Verify response parsing works
+   - Test timeout handling (simulate slow endpoint)
 
-**Expected:** Console log showing successful connection to backend
+4. **Create network helper module (`scripts/utils/network_helpers.js`)**
+   - Wrap http.post() with try/catch and timeout logic
+   - Wrap http.get() with retry mechanism (3 attempts)
+   - Add logging for DEBUG_MODE
+   - Export helper functions
 
----
-
-## Feature 5: Connection Pooling Configuration
-
-**Goal:** PostgreSQL connection pool operational with proper limits
-
-### Steps:
-1. Create `nodeDB/db/pool.js` with pg-pool configuration
-2. Set pool parameters: max 20 connections, idle timeout 30s
-3. Add pool error handlers for connection failures
-4. Implement connection test function that runs on backend startup
-5. Add pool metrics logging (active connections, queue size)
-
-**Files Created:**
-- `nodeDB/db/pool.js`
-
-**Validation:**
-```javascript
-// Test in Node.js console
-const { pool } = require('./db/pool');
-
-async function testPool() {
-  const client = await pool.connect();
-  try {
-    const result = await client.query('SELECT NOW()');
-    console.log('Database time:', result.rows[0].now);
-  } finally {
-    client.release();
-  }
-}
-
-testPool();
-```
+5. **Test error scenarios**
+   - Stop backend server and verify Script API handles connection refused
+   - Test timeout scenario (backend responds after 10+ seconds)
+   - Verify error messages are logged correctly
+   - Confirm game doesn't crash on network errors
 
 ---
 
-## Configuration Files
+## Feature 5: DynamicProperties Schema & Testing
 
-### `.env` (nodeDB/.env)
-```env
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=villager_memory
-DB_USER=minecraft_ai
-DB_PASSWORD=your_secure_password_here
+**Deliverable:** Standardized DynamicProperties schema for Working Memory with validation.
 
-# Backend
-PORT=3000
-NODE_ENV=development
+### Steps
 
-# LLM
-LLAMA_URL=http://localhost:8080
+1. **Define Working Memory schema (`scripts/config/dynamic_properties_schema.js`)**
+   - Define property names (wm_currentFocus, wm_currentMood_C/V/I/S/X, etc.)
+   - Define data types (TEXT, REAL, BOOLEAN, BIGINT)
+   - Export schema as constant for reference
+   - Add JSDoc documentation for each property
 
-# Logging
-LOG_LEVEL=debug
-DEBUG_MODE=true
-```
+2. **Create DynamicProperties helper module (`scripts/utils/dynamic_properties_helpers.js`)**
+   - Create getWorkingMemory(entity) function to read all WM properties
+   - Create setWorkingMemory(entity, workingMemory) function to write all WM properties
+   - Add validation to ensure entity.isValid() before operations
+   - Export helper functions with JSDoc
 
-### `manifest.json` (Behavior Pack Root)
-```json
-{
-  "format_version": 2,
-  "header": {
-    "name": "Immersive Villagers BP",
-    "description": "AI-driven cognitive villager system",
-    "uuid": "generate-unique-uuid-here",
-    "version": [0, 0, 1],
-    "min_engine_version": [1, 26, 0]
-  },
-  "modules": [
-    {
-      "type": "data",
-      "uuid": "generate-unique-uuid-here",
-      "version": [0, 0, 1]
-    },
-    {
-      "type": "script",
-      "language": "javascript",
-      "uuid": "generate-unique-uuid-here",
-      "version": [0, 0, 1],
-      "entry": "scripts/main.js"
-    }
-  ],
-  "dependencies": [
-    {
-      "module_name": "@minecraft/server",
-      "version": "1.17.0"
-    },
-    {
-      "module_name": "@minecraft/server-net",
-      "version": "1.0.0-beta"
-    }
-  ]
-}
-```
+3. **Test property persistence**
+   - Create test villager in-game
+   - Set Working Memory properties via helper functions
+   - Restart Minecraft server
+   - Verify properties persist after restart
+
+4. **Create property initialization (`scripts/layers/layer4_working_memory.js`)**
+   - Create initializeWorkingMemory(entity) function
+   - Set default values for all WM properties (mood: 0.5 for all axes)
+   - Add timestamp for wm_lastUpdate
+   - Run initialization for all villagers on world load
+
+5. **Test with multiple villagers**
+   - Spawn 5 test villagers in-game
+   - Initialize Working Memory for each
+   - Verify each villager has isolated properties
+   - Test entity.isValid() checks work correctly
 
 ---
 
-## Database Schema (nodeDB/db/schema.sql)
+## Feature 6: DEBUG_MODE Toggle & Logging
 
-```sql
--- Episodes table
-CREATE TABLE episodes (
-  id SERIAL PRIMARY KEY,
-  villager_id TEXT NOT NULL,
-  actor_id TEXT NOT NULL,
-  vector_c REAL NOT NULL,
-  vector_v REAL NOT NULL,
-  vector_i REAL NOT NULL,
-  vector_s REAL NOT NULL,
-  vector_x REAL NOT NULL,
-  duration INTEGER,
-  event_count INTEGER,
-  seal_reason TEXT,
-  timestamp BIGINT NOT NULL
-);
+**Deliverable:** DEBUG_MODE flag that can be toggled in-game to enable/disable detailed logging.
 
-CREATE INDEX idx_episodes_villager ON episodes(villager_id, timestamp DESC);
-CREATE INDEX idx_episodes_actor ON episodes(actor_id, timestamp DESC);
+### Steps
 
--- Working Memory table
-CREATE TABLE working_memory (
-  villager_id TEXT PRIMARY KEY,
-  mood_c REAL NOT NULL,
-  mood_v REAL NOT NULL,
-  mood_i REAL NOT NULL,
-  mood_s REAL NOT NULL,
-  mood_x REAL NOT NULL,
-  current_focus TEXT,
-  shock_state BOOLEAN DEFAULT FALSE,
-  last_update BIGINT NOT NULL
-);
+1. **Create DEBUG_MODE toggle command (`scripts/utils/debug_logger.js`)**
+   - Read DEBUG_MODE from world.getDynamicProperty('DEBUG_MODE')
+   - Create debugLog(layer, message, data) function that checks flag
+   - Create errorLog(layer, message, error) function (always logs)
+   - Export logging functions with JSDoc
 
--- Relationships table
-CREATE TABLE relationships (
-  id SERIAL PRIMARY KEY,
-  villager_id TEXT NOT NULL,
-  actor_id TEXT NOT NULL,
-  interaction_count INTEGER DEFAULT 0,
-  trust_score REAL DEFAULT 0.5,
-  last_interaction BIGINT,
-  UNIQUE(villager_id, actor_id)
-);
+2. **Add in-game toggle command**
+   - Register custom command or use /scriptevent to toggle DEBUG_MODE
+   - Set world.setDynamicProperty('DEBUG_MODE', true/false)
+   - Broadcast confirmation message to all admins
+   - Log toggle event to console
 
-CREATE INDEX idx_relationships_villager ON relationships(villager_id);
+3. **Add DEBUG_MODE logging to test scripts**
+   - Add debugLog() calls to HTTP test script
+   - Add debugLog() calls to DynamicProperties test script
+   - Enable DEBUG_MODE in-game
+   - Verify logs appear in Content Log
 
--- Identity tags table
-CREATE TABLE identity_tags (
-  id SERIAL PRIMARY KEY,
-  villager_id TEXT NOT NULL,
-  tag_name TEXT NOT NULL,
-  confidence REAL DEFAULT 0.5,
-  created_at BIGINT NOT NULL,
-  UNIQUE(villager_id, tag_name)
-);
+4. **Sync DEBUG_MODE with backend**
+   - Create /api/debug/toggle endpoint in backend
+   - Accept DEBUG_MODE state from Script API
+   - Update LOG_LEVEL in Pino logger dynamically
+   - Return confirmation response
 
-CREATE INDEX idx_identity_tags_villager ON identity_tags(villager_id);
-```
+5. **Test toggle functionality**
+   - Enable DEBUG_MODE in-game
+   - Verify Script API logs appear
+   - Verify backend switches to debug log level
+   - Disable DEBUG_MODE and confirm logs stop
 
 ---
 
 ## Testing Checklist
 
-**Infrastructure Tests:**
-- [ ] PostgreSQL service running (`systemctl status postgresql` or equivalent)
-- [ ] Database `villager_memory` created and accessible
-- [ ] All tables created with correct schema
-- [ ] Node.js backend starts without errors
-- [ ] Backend responds to health checks (`curl http://localhost:3000/api/health`)
-- [ ] llama.cpp server running on port 8080
-- [ ] llama.cpp responds to test completions
-
-**Integration Tests:**
-- [ ] Script API can load without errors in BDS
-- [ ] HTTP request from Script API reaches backend
-- [ ] Backend logs show incoming request from Script API
-- [ ] Connection pool successfully connects to PostgreSQL
-- [ ] No memory leaks after 5 minutes of idle operation
+- [ ] PostgreSQL accepts connections and returns query results
+- [ ] Node.js backend responds to /api/health with 200 status
+- [ ] llama.cpp generates completions for test prompts
+- [ ] Script API can POST data to backend successfully
+- [ ] Script API can GET data from backend successfully
+- [ ] DynamicProperties persist across server restarts
+- [ ] DEBUG_MODE toggle works in both Script API and backend
+- [ ] Network errors are handled gracefully (no crashes)
+- [ ] Multiple concurrent HTTP requests work correctly
+- [ ] Pino logs are written to file with proper formatting
 
 ---
 
-## Known Issues & Limitations
+## Known Limitations at End of Phase 0
 
-**At this phase:**
-- No actual villager logic implemented
-- No event listeners configured
-- LLM integration exists but not called by any logic
-- DynamicProperties not yet used
-- No error recovery mechanisms
-
-**These are expected** — Phase 0 is infrastructure only.
+- No event filtering (Layer 1) implemented yet
+- No vectorization logic (Layer 2) exists
+- No episode grouping (Layer 3) implemented
+- Backend routes return mock data only
+- LLM is not integrated with game logic
+- No villager actions or behaviors are triggered
+- System is infrastructure-only, not playable
 
 ---
 
-## Next Phase Preview
+## File Structure After Phase 0
 
-**Phase 1 (MVP)** will implement:
-- Layers 1-4 (Fast Gear): Event filtering, vectorization, episode formation
-- Layer 5: Basic memory writes to PostgreSQL
-- Layer 7: Minimal action execution (console logging only)
-- End-to-end flow: Player places block → Episode written to database
+```
+Immersive_Villagers BP/
+├── scripts/
+│   ├── config/
+│   │   └── dynamic_properties_schema.js
+│   ├── utils/
+│   │   ├── dynamic_properties_helpers.js
+│   │   ├── network_helpers.js
+│   │   └── debug_logger.js
+│   ├── layers/
+│   │   └── layer4_working_memory.js        # Initialization only
+│   ├── test_http.js                         # Test script (remove after Phase 0)
+│   └── main.js                              # Minimal entry point
+│
+├── nodeDB/
+│   ├── db/
+│   │   ├── pool.js
+│   │   └── schema.sql
+│   ├── routes/
+│   │   └── debug.js                         # Health check only
+│   ├── brain/
+│   │   └── llm_client.js
+│   ├── utils/
+│   │   └── logger.js
+│   ├── app.js
+│   ├── server.js
+│   ├── package.json
+│   └── .env
+│
+└── _docs/
+    └── phases/
+        └── phase0-setup.md                  # THIS FILE
+```
+
+---
+
+## Estimated Complexity
+
+**Time Investment:** Short (foundational setup)  
+**Technical Difficulty:** Medium (requires external services)  
+**Dependencies:** PostgreSQL, Node.js 18+, llama.cpp  
+**Risk Level:** Low (isolated infrastructure testing)
 
 ---
 
 **Document Type:** Phase Plan  
 **Phase:** 0 (Setup)  
 **Status:** Ready for Implementation  
-**Last Updated:** Feb 23, 2026
+**Version:** 1.0  
+**Last Updated:** Feb 24, 2026

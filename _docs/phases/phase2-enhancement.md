@@ -1,1044 +1,461 @@
-# Phase 2: Enhancement — Rich Interactions & UI
+# 🧪 Phase 2: Enhancement (Memory & Intelligence)
 
-**Status:** Feature Enhancement Phase  
-**Goal:** Transform MVP into a feature-rich, polished experience  
-**Deliverable:** Physical villager actions, in-game UI, gossip system, multi-event support  
-**Duration Target:** 7-10 implementation sessions
+## Goal
 
----
-
-## Overview
-
-This phase builds upon the MVP by adding player-facing features, physical villager actions, interactive UI systems, and advanced memory capabilities. Villagers will move, build, and communicate through rich in-game menus.
-
-**Success Criteria:**
-- Villagers perform physical actions (pathfinding, building, animations)
-- Interactive UI system (Hub, Gossip, Debug menus)
-- Multi-event support (chat, damage, containers)
-- Gossip and teaching mechanics functional
-- Instinct fallback operational when LLM fails
-- Identity tag generation working
+Enhance the MVP with **relationship scoring, personality traits, context-aware LLM prompts, and advanced villager actions**. This phase transforms villagers from simple responders into adaptive agents with memory, identity, and richer behavioral repertoire.
 
 ---
 
-## Feature 1: Physical Action Execution
+## Success Criteria
 
-**Goal:** Villagers execute pathfinding, building, and animation actions
-
-### Steps:
-1. Extend `scripts/layers/layer7_action.js` with physical action handlers
-2. Implement pathfinding: Store target coordinates in DynamicProperties, teleport in increments
-3. Implement building: Use `/setblock` command via `dimension.runCommand()`
-4. Add animation triggers: Use villager component animations for gestures
-5. Implement action state machine to prevent concurrent actions
-
-**Files Modified:**
-- `scripts/layers/layer7_action.js`
-
-**Action Types:**
-```javascript
-function executeIntent(villager, intentPacket) {
-  switch (intentPacket.action) {
-    case 'speak':
-      displaySpeech(villager, intentPacket.speechText);
-      break;
-    
-    case 'pathfind':
-      startPathfinding(villager, intentPacket.targetLocation);
-      break;
-    
-    case 'build':
-      placeBlock(villager, intentPacket.blockType, intentPacket.coordinates);
-      break;
-    
-    case 'gesture':
-      playAnimation(villager, intentPacket.animationType);
-      break;
-    
-    case 'idle':
-      // Do nothing
-      break;
-  }
-}
-```
-
-**Pathfinding Implementation:**
-```javascript
-function startPathfinding(villager, targetLocation) {
-  villager.setDynamicProperty('pathfind_target_x', targetLocation.x);
-  villager.setDynamicProperty('pathfind_target_y', targetLocation.y);
-  villager.setDynamicProperty('pathfind_target_z', targetLocation.z);
-  villager.setDynamicProperty('is_pathfinding', true);
-}
-
-// Separate tick loop for movement
-system.runInterval(() => {
-  const villagers = world.getDimension('overworld').getEntities({ type: 'minecraft:villager_v2' });
-  
-  for (const villager of villagers) {
-    if (!villager.isValid()) continue;
-    
-    const isPathfinding = villager.getDynamicProperty('is_pathfinding');
-    if (!isPathfinding) continue;
-    
-    const targetX = villager.getDynamicProperty('pathfind_target_x');
-    const targetY = villager.getDynamicProperty('pathfind_target_y');
-    const targetZ = villager.getDynamicProperty('pathfind_target_z');
-    
-    const currentLoc = villager.location;
-    const distance = Math.sqrt(
-      Math.pow(targetX - currentLoc.x, 2) + 
-      Math.pow(targetZ - currentLoc.z, 2)
-    );
-    
-    if (distance < 1.0) {
-      // Reached destination
-      villager.setDynamicProperty('is_pathfinding', false);
-      continue;
-    }
-    
-    // Move incrementally
-    const dx = (targetX - currentLoc.x) / distance;
-    const dz = (targetZ - currentLoc.z) / distance;
-    
-    villager.teleport({
-      x: currentLoc.x + dx * 0.2,
-      y: targetY,
-      z: currentLoc.z + dz * 0.2
-    });
-  }
-}, 1); // Every tick for smooth movement
-```
-
-**Validation:**
-- LLM returns pathfind intent → Villager walks to location
-- LLM returns build intent → Block appears in world
-- Villager reaches destination → Stops moving
+- Villagers track trust scores with individual players
+- Relationship scores dynamically adjust based on interaction history
+- Villagers develop personality tags (e.g., loves_building, is_cautious)
+- LLM prompts include personality and relationship context
+- Villagers can pathfind, stare at targets, and flee from threats
+- Advanced episode sealing with LLM concept labeling for unknowns
+- Brain Scheduler implements priority queue and batching
+- Multiple villagers can observe same event and batch LLM requests
 
 ---
 
-## Feature 2: In-Game Speech Display
+## Feature 1: Relationship Scoring System
 
-**Goal:** Display villager speech as on-screen text instead of console logs
+**Deliverable:** Dynamic trust score calculation based on interaction history.
 
-### Steps:
-1. Implement speech bubble using `player.onScreenDisplay.setActionBar()`
-2. Add villager nameplate prefix: `§e[Villager Name]: §r{speechText}`
-3. Store speech history in DynamicProperties (last 3 messages)
-4. Add timeout: Clear speech after 5 seconds
-5. Support multi-line speech with formatting
+### Steps
 
-**Files Modified:**
-- `scripts/layers/layer7_action.js`
-- `scripts/utils/ui_helpers.js`
+1. **Create relationship query module (`nodeDB/queries/relationships.js`)**
+   - Create getRelationship(villagerID, actorID) query function
+   - Create updateRelationship(villagerID, actorID, episodeVector) function
+   - Create calculateTrustScore() that averages Sociality (S) over last 10 episodes
+   - Use weighted average (recent episodes weighted higher)
 
-**Speech Display:**
-```javascript
-function displaySpeech(villager, speechText, targetPlayerID) {
-  const targetPlayer = world.getEntity(targetPlayerID);
-  if (!targetPlayer) return;
-  
-  const villagerName = villager.nameTag || `Villager ${villager.id.slice(-4)}`;
-  const formattedMessage = `§e[${villagerName}]: §r${speechText}`;
-  
-  targetPlayer.onScreenDisplay.setActionBar(formattedMessage);
-  
-  // Store in history
-  const history = JSON.parse(villager.getDynamicProperty('speech_history') || '[]');
-  history.push({ text: speechText, timestamp: Date.now() });
-  if (history.length > 3) history.shift();
-  villager.setDynamicProperty('speech_history', JSON.stringify(history));
-  
-  // Clear after 5 seconds
-  system.runTimeout(() => {
-    targetPlayer.onScreenDisplay.setActionBar('');
-  }, 100); // 5 seconds
-}
-```
+2. **Implement trust score calculation**
+   - Formula: New_Trust = (Old_Trust * 0.7) + (Episode_S * 0.3)
+   - Clamp trust score to range [-1, 1]
+   - Store in relationships table (trust_score column)
+   - Update last_interaction timestamp
 
-**Validation:**
-- Villager speaks → Text appears on player's screen
-- Text auto-clears after 5 seconds
-- Speech history stored and retrievable
+3. **Add relationship update to episode write**
+   - In writeEpisode() transaction, call updateRelationship()
+   - Increment interaction_count for this villager-player pair
+   - Recalculate trust_score based on episode's vectorAverage.S
+   - COMMIT both operations atomically
+
+4. **Create relationship lookup endpoint**
+   - GET /api/memory/relationship?villagerID=X&actorID=Y
+   - Return { trustScore, interactionCount, lastInteraction }
+   - Add to Layer 5 response when episode is written
+   - Cache in Working Memory (wm_trustScore_playerID)
+
+5. **Test relationship evolution**
+   - Spawn villager and have player place 10 constructive blocks (high S)
+   - Verify trust score increases from 0.5 to ~0.8
+   - Have player break 5 villager's blocks (negative S)
+   - Verify trust score decreases to ~0.4
 
 ---
 
-## Feature 3: Interaction Hub UI
+## Feature 2: Personality Tags & Identity
 
-**Goal:** Custom UI for player-villager interaction
+**Deliverable:** Villagers develop personality traits based on long-term behavioral patterns.
 
-### Steps:
-1. Create `scripts/ui/hub.js` with ActionFormData for main menu
-2. Add interaction trigger: Right-click villager with empty hand opens menu
-3. Implement menu options: "Chat", "View Memories", "Gossip", "Cancel"
-4. Route selections to appropriate sub-menus
-5. Add breadcrumb navigation for multi-level menus
+### Steps
 
-**Files Created:**
-- `scripts/ui/hub.js`
-- `scripts/ui/state.js`
-- `scripts/events/player_interact.js`
+1. **Add personality schema to database**
+   - Add personality_tags JSONB column to working_memory table
+   - Define standard tags: loves_building, is_cautious, values_diamonds, is_brave, is_social
+   - Create indexes on personality_tags for fast queries
+   - Seed database with default empty tags
 
-**Hub Menu:**
-```javascript
-import { ActionFormData } from '@minecraft/server-ui';
+2. **Create identity analysis logic (`nodeDB/queries/identity.js`)**
+   - Analyze last 20 episodes for consistent patterns
+   - If 70%+ episodes have C > 0.6, tag as loves_building
+   - If 70%+ episodes have V > 0.7 for diamonds, tag as values_diamonds
+   - If 70%+ episodes have high I but low fear response, tag as is_brave
 
-function showInteractionHub(player, villager) {
-  const form = new ActionFormData()
-    .title(`§6${villager.nameTag || 'Villager'}`)
-    .body('§7What would you like to do?')
-    .button('§eChat\n§7Start a conversation', 'textures/ui/chat_icon')
-    .button('§bView Memories\n§7See what they remember', 'textures/ui/memory_icon')
-    .button('§aGossip & Whisper\n§7Share knowledge', 'textures/ui/gossip_icon')
-    .button('§cCancel', 'textures/ui/cancel_icon');
-  
-  form.show(player).then(response => {
-    if (response.canceled) return;
-    
-    switch (response.selection) {
-      case 0: // Chat
-        handleChatMenu(player, villager);
-        break;
-      case 1: // View Memories
-        handleMemoriesMenu(player, villager);
-        break;
-      case 2: // Gossip
-        handleGossipMenu(player, villager);
-        break;
-      case 3: // Cancel
-        return;
-    }
-  });
-}
-```
+3. **Run identity analysis periodically**
+   - Add cron job or interval in Brain Scheduler (every 5 minutes)
+   - For each villager, analyze recent episodes
+   - Update personality_tags in working_memory table
+   - Log personality changes if DEBUG_MODE enabled
 
-**Interaction Trigger:**
-```javascript
-world.afterEvents.playerInteractWithEntity.subscribe(event => {
-  const { player, target } = event;
-  
-  if (target.typeId !== 'minecraft:villager_v2') return;
-  if (player.getItemSlot('mainhand').typeId !== 'minecraft:air') return;
-  
-  showInteractionHub(player, target);
-});
-```
+4. **Include personality in LLM prompts**
+   - Fetch personality_tags when building prompt
+   - Add section: "Your Personality: [loves_building, is_cautious]"
+   - LLM adjusts tone and responses based on traits
+   - Test with different personality combinations
 
-**Validation:**
-- Right-click villager with empty hand → Menu opens
-- Select option → Navigates to sub-menu
-- Cancel → Menu closes without action
+5. **Test identity emergence**
+   - Have player consistently build near villager (20+ episodes)
+   - Verify villager gets tagged with loves_building
+   - Trigger LLM response and confirm tone reflects personality
+   - Test with destructive actions (expect is_cautious tag)
 
 ---
 
-## Feature 4: Gossip & Whisper System
+## Feature 3: Context-Aware LLM Prompts
 
-**Goal:** Players can share knowledge between villagers
+**Deliverable:** LLM receives rich context including episode history, relationships, and personality.
 
-### Steps:
-1. Create `scripts/ui/gossip.js` with gossip menu interface
-2. Implement "Whisper Fact" option: Player inputs text to teach villager
-3. Store gossip in `gossip` database table (villagerID, fact, source, timestamp)
-4. Implement "Request Gossip": Fetch rumors from database and display
-5. Add LLM prompt enhancement: Include gossip in context
+### Steps
 
-**Files Created:**
-- `scripts/ui/gossip.js`
-- `nodeDB/routes/gossip.js`
-- `nodeDB/queries/gossip.js`
+1. **Enhance prompt builder (`nodeDB/brain/prompt_builder.js`)**
+   - Fetch last 5 episodes (up from 3) with summaries
+   - Fetch relationship score and interaction history
+   - Fetch personality tags from working_memory
+   - Include current Working Memory state (mood, shock)
 
-**Database Schema:**
-```sql
-CREATE TABLE gossip (
-  id SERIAL PRIMARY KEY,
-  villager_id TEXT NOT NULL,
-  fact TEXT NOT NULL,
-  source_type TEXT, -- 'player' or 'villager'
-  source_id TEXT,
-  confidence REAL DEFAULT 1.0,
-  timestamp BIGINT NOT NULL
-);
+2. **Structure prompt with clear sections**
+   - Section 1: Identity ("You are Villager [name] with traits [tags]")
+   - Section 2: Relationship ("Your relationship with Player X: trust score 0.8, 15 interactions")
+   - Section 3: Recent Activity ("Last 5 episodes: [summaries]")
+   - Section 4: Current State ("Current mood: [C, V, I, S, X], Shock: false")
 
-CREATE INDEX idx_gossip_villager ON gossip(villager_id, timestamp DESC);
-```
+3. **Add response format instructions**
+   - Instruct LLM to return JSON: { action, speechText, internalMonologue }
+   - Define allowed actions: speak, idle, pathfind, stare, flee
+   - Provide examples of good responses
+   - Add stop sequences to prevent runaway generation
 
-**Whisper Menu:**
-```javascript
-import { ModalFormData } from '@minecraft/server-ui';
+4. **Implement response parser (`nodeDB/brain/response_parser.js`)**
+   - Parse LLM output and extract JSON
+   - Remove markdown code fences if present
+   - Validate action field against allowed actions
+   - Fallback to { action: "idle" } if parsing fails
 
-function showWhisperMenu(player, villager) {
-  const form = new ModalFormData()
-    .title(`§6Whisper to ${villager.nameTag}`)
-    .textField('§eWhat do you want to tell them?', 'Type your message here...');
-  
-  form.show(player).then(response => {
-    if (response.canceled) return;
-    
-    const fact = response.formValues[0];
-    if (!fact || fact.length < 3) {
-      player.sendMessage('§cMessage too short!');
-      return;
-    }
-    
-    // Send to backend
-    http.post('http://localhost:3000/api/gossip/whisper', {
-      body: JSON.stringify({
-        villagerID: villager.id,
-        fact,
-        sourceType: 'player',
-        sourceID: player.id
-      })
-    }).then(() => {
-      player.sendMessage(`§aYou whispered to ${villager.nameTag}.`);
-    });
-  });
-}
-```
-
-**LLM Context Enhancement:**
-```javascript
-// In nodeDB/brain/prompt_builder.js
-async function buildPrompt(villagerContext) {
-  const { villagerID, recentEpisodes, relationshipScore } = villagerContext;
-  
-  // Fetch recent gossip
-  const gossip = await pool.query(
-    'SELECT fact, source_type FROM gossip WHERE villager_id = $1 ORDER BY timestamp DESC LIMIT 5',
-    [villagerID]
-  );
-  
-  const gossipText = gossip.rows.map(g => `- ${g.fact} (heard from ${g.source_type})`).join('\n');
-  
-  return `You are Villager ${villagerID}.
-
-Recent Activity:
-${formatEpisodes(recentEpisodes)}
-
-What You've Been Told:
-${gossipText}
-
-Your Relationship:
-- Trust Score: ${relationshipScore}
-
-Generate a JSON response:
-...`;
-}
-```
-
-**Validation:**
-- Player whispers "Diamonds are north" → Stored in database
-- Villager's next LLM prompt includes gossip
-- Request gossip → Shows list of facts learned
+5. **Test context-aware responses**
+   - Build relationship with villager (high trust)
+   - Trigger event and verify response is friendly
+   - Damage villager (low trust) and verify response is cautious
+   - Test with different personality combinations
 
 ---
 
-## Feature 5: Multi-Event Support
+## Feature 4: Advanced Villager Actions
 
-**Goal:** Support chat messages, damage events, and container interactions
+**Deliverable:** Villagers can pathfind to locations, stare at targets, and flee from threats.
 
-### Steps:
-1. Add `playerChat` event listener in `scripts/events/chat_events.js`
-2. Add `entityHurt` event listener for damage tracking
-3. Add `playerInteractWithBlock` for chest/container interactions
-4. Extend vector rules to support new event types
-5. Update Layer 2 to handle diverse event contexts
+### Steps
 
-**Files Created:**
-- `scripts/events/chat_events.js`
-- `scripts/events/entity_events.js`
+1. **Implement pathfind action in Layer 7**
+   - Parse intentPacket.actionParams.targetCoordinates
+   - Store target in DynamicProperties (pathfind_target_x/y/z)
+   - Set is_pathfinding flag to true
+   - Use entity.tryTeleport() or navigation component to move
 
-**Chat Event Handling:**
-```javascript
-world.afterEvents.chatSend.subscribe(event => {
-  const { sender, message } = event;
-  
-  const nearbyVillagers = world.getDimension('overworld')
-    .getEntities({
-      type: 'minecraft:villager_v2',
-      location: sender.location,
-      maxDistance: AWARENESS_RADIUS
-    });
-  
-  for (const villager of nearbyVillagers) {
-    if (!hasLineOfSight(villager.location, sender.location)) continue;
-    
-    // Create FilteredEventContext for chat
-    const eventContext = {
-      type: 'FilteredEventContext',
-      eventName: 'playerChat',
-      actorID: sender.id,
-      villagerID: villager.id,
-      chatMessage: message,
-      proximity: distance(villager.location, sender.location),
-      hasLOS: true,
-      timestamp: Date.now()
-    };
-    
-    // Pass to Layer 2
-    processEvent(eventContext);
-  }
-});
-```
+2. **Implement stare action**
+   - Parse intentPacket.actionParams.targetEntityID
+   - Store target in DynamicProperties (stare_target_id)
+   - Run interval loop to update entity head rotation toward target
+   - Clear stare_target_id after 5 seconds or if target moves away
 
-**Vector Rules for Chat:**
-```javascript
-// In scripts/config/vector_rules.js
-export const CHAT_VECTOR_RULES = {
-  // Constructiveness
-  greeting: { C: 0.5 },
-  question: { C: 0.3 },
-  insult: { C: -0.7 },
-  
-  // Sociality
-  friendly_tone: { S: 0.8 },
-  aggressive_tone: { S: -0.8 },
-  
-  // Intensity
-  exclamation: { I: 0.6 },
-  calm: { I: 0.2 }
-};
+3. **Implement flee action**
+   - Calculate safe location (opposite direction from threat)
+   - Use pathfind logic to move to safe location
+   - Set shockState to true in Working Memory
+   - Continue fleeing until distance > 20 blocks
 
-function calculateChatVector(chatMessage) {
-  // Simple keyword matching (can be enhanced with NLP)
-  const lower = chatMessage.toLowerCase();
-  
-  let C = 0.3, V = 0.0, I = 0.3, S = 0.5, X = 0.2;
-  
-  if (lower.includes('hello') || lower.includes('hi')) {
-    C = 0.5;
-    S = 0.8;
-  }
-  
-  if (lower.includes('!')) {
-    I = 0.6;
-  }
-  
-  if (lower.includes('stupid') || lower.includes('idiot')) {
-    C = -0.7;
-    S = -0.8;
-  }
-  
-  return { C, V, I, S, X };
-}
-```
+4. **Add action state tracking**
+   - Store current action in DynamicProperty (current_action)
+   - Track action start time (action_start_time)
+   - Allow action interruption for high-priority intents
+   - Log action transitions if DEBUG_MODE enabled
 
-**Validation:**
-- Player says "Hello!" near villager → Chat event vectorized
-- Player hits villager → Damage event creates negative vector
-- Player opens chest near villager → Container event captured
+5. **Test advanced actions**
+   - Trigger pathfind action (place valuable block 10 blocks away)
+   - Verify villager walks toward location
+   - Trigger flee action (damage villager)
+   - Verify villager runs away and shockState is set
 
 ---
 
-## Feature 6: Identity Tag Generation
+## Feature 5: Advanced Episode Sealing & LLM Labeling
 
-**Goal:** Automatically generate personality tags based on episode patterns
+**Deliverable:** Layer 3 uses LLM to label unknown episode patterns as new concepts.
 
-### Steps:
-1. Create `nodeDB/brain/identity_analyzer.js` with tag generation logic
-2. Implement pattern detection: Analyze last 20 episodes for dominant vectors
-3. Define tag rules: High C average → "loves_building", High V → "values_diamonds"
-4. Update `identity_tags` table with confidence scores
-5. Include tags in LLM prompts for personality consistency
+### Steps
 
-**Files Created:**
-- `nodeDB/brain/identity_analyzer.js`
-- `nodeDB/queries/identity.js`
+1. **Enhance concept matching in Layer 3**
+   - Calculate Euclidean distance between vectorAverage and all known concepts
+   - If best match distance > 0.2, mark episode as "unknown"
+   - Send HTTP POST to /api/brain/label-concept with episode details
+   - Store requestID and wait for LLM labeling
 
-**Tag Generation Logic:**
-```javascript
-async function analyzeIdentity(villagerID) {
-  // Fetch last 20 episodes
-  const episodes = await pool.query(
-    'SELECT vector_c, vector_v, vector_i, vector_s, vector_x FROM episodes WHERE villager_id = $1 ORDER BY timestamp DESC LIMIT 20',
-    [villagerID]
-  );
-  
-  if (episodes.rows.length < 5) return; // Not enough data
-  
-  // Calculate averages
-  const avgC = average(episodes.rows.map(e => e.vector_c));
-  const avgV = average(episodes.rows.map(e => e.vector_v));
-  const avgI = average(episodes.rows.map(e => e.vector_i));
-  const avgS = average(episodes.rows.map(e => e.vector_s));
-  const avgX = average(episodes.rows.map(e => e.vector_x));
-  
-  const tags = [];
-  
-  if (avgC > 0.6) tags.push({ name: 'loves_building', confidence: avgC });
-  if (avgC < -0.6) tags.push({ name: 'destructive', confidence: Math.abs(avgC) });
-  if (avgV > 0.7) tags.push({ name: 'values_wealth', confidence: avgV });
-  if (avgI > 0.6) tags.push({ name: 'energetic', confidence: avgI });
-  if (avgS > 0.6) tags.push({ name: 'friendly', confidence: avgS });
-  if (avgS < -0.6) tags.push({ name: 'hostile', confidence: Math.abs(avgS) });
-  if (avgX > 0.6) tags.push({ name: 'technical_minded', confidence: avgX });
-  
-  // Upsert tags
-  for (const tag of tags) {
-    await pool.query(
-      'INSERT INTO identity_tags (villager_id, tag_name, confidence, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT (villager_id, tag_name) DO UPDATE SET confidence = $3',
-      [villagerID, tag.name, tag.confidence, Date.now()]
-    );
-  }
-  
-  return tags;
-}
-```
+2. **Create concept labeling endpoint (`nodeDB/routes/brain.js`)**
+   - POST /api/brain/label-concept accepts episode vectorAverage and raw events
+   - Build prompt: "This villager observed: [events]. What 1-2 word name describes this activity?"
+   - Queue LLM request with high priority
+   - Return { status: "queued", requestID }
 
-**Trigger Analysis:**
-```javascript
-// In nodeDB/routes/memory.js
-router.post('/episode', async (req, res) => {
-  try {
-    const result = await writeEpisodeWithRelationships(req.body.episodeSummary);
-    
-    // Trigger identity analysis every 5 episodes
-    const episodeCount = await getEpisodeCount(req.body.villagerID);
-    if (episodeCount % 5 === 0) {
-      analyzeIdentity(req.body.villagerID);
-    }
-    
-    res.json({ status: 'success', episodeID: result.episodeID });
-  } catch (err) {
-    // Error handling
-  }
-});
-```
+3. **Add concept labeling to Brain Scheduler**
+   - Process concept labeling requests before standard intents
+   - LLM returns concept name (e.g., "Mining", "Building House")
+   - Validate name (alphanumeric, 2-20 characters)
+   - Store new concept in concepts table
 
-**Validation:**
-- Villager observes 20 building actions → Tag "loves_building" appears
-- Check database: `SELECT * FROM identity_tags WHERE villager_id = 'v456';`
-- LLM prompt includes personality tags
+4. **Update episode with concept_id**
+   - After concept is labeled, UPDATE episode record in PostgreSQL
+   - Set concept_id and concept_name fields
+   - Add concept to villager's discovery list (subjective knowledge)
+   - Return confirmation to Script API
+
+5. **Test concept learning**
+   - Perform novel activity (e.g., dig pattern in ground)
+   - Verify Layer 3 detects unknown pattern
+   - Wait for LLM to label concept
+   - Check PostgreSQL for new concept entry
+   - Repeat activity and verify concept is now recognized
 
 ---
 
-## Feature 7: Instinct Fallback System
+## Feature 6: Brain Scheduler Priority Queue
 
-**Goal:** Hardcoded behaviors when LLM/network fails
+**Deliverable:** Brain Scheduler prioritizes critical requests and batches multiple villagers.
 
-### Steps:
-1. Create `scripts/layers/layer8_instinct.js` with fallback logic
-2. Detect failures: Track polling failures (>3 attempts = fallback)
-3. Implement simple rules: If recent S > 0.6 → wave, If S < -0.6 → run away
-4. Store fallback state in DynamicProperties: `instinct_mode`, `instinct_reason`
-5. Retry LLM connection every 60 seconds
+### Steps
 
-**Files Created:**
-- `scripts/layers/layer8_instinct.js`
+1. **Add priority scoring to scheduler**
+   - High priority (100): shockState = true, direct damage
+   - Medium priority (70): social interactions, chat, trade
+   - Low priority (40): novel patterns, curiosity
+   - Routine priority (10): idle behavior, ambient observations
 
-**Instinct Logic:**
-```javascript
-function applyInstinct(villager) {
-  const moodS = villager.getDynamicProperty('wm_currentMood_S') || 0.5;
-  const moodC = villager.getDynamicProperty('wm_currentMood_C') || 0.5;
-  const moodI = villager.getDynamicProperty('wm_currentMood_I') || 0.5;
-  
-  // Friendly behavior
-  if (moodS > 0.6 && moodC > 0.5) {
-    playAnimation(villager, 'wave');
-    return { action: 'gesture', animationType: 'wave' };
-  }
-  
-  // Fearful behavior
-  if (moodS < -0.6 || moodI > 0.8) {
-    const escapeLocation = calculateEscapeVector(villager.location);
-    startPathfinding(villager, escapeLocation);
-    return { action: 'pathfind', targetLocation: escapeLocation };
-  }
-  
-  // Neutral/idle
-  return { action: 'idle' };
-}
-```
+2. **Implement priority queue sorting**
+   - Sort queue by priority score (high to low) before processing
+   - Break ties by timestamp (FIFO within same priority)
+   - Re-sort queue whenever new request is enqueued
+   - Log queue state changes if DEBUG_MODE enabled
 
-**Fallback Trigger:**
-```javascript
-// In scripts/layers/layer7_action.js
-let pollingFailures = 0;
+3. **Add request batching logic**
+   - Detect when multiple villagers observe same event (same coordinates + time)
+   - Collapse requests into single LLM call with shared context
+   - Broadcast result to all observing villagers
+   - Log batching event for performance monitoring
 
-http.get(`http://localhost:3000/api/brain/poll?villagerID=${villager.id}`)
-  .then(response => {
-    pollingFailures = 0;
-    const data = JSON.parse(response.body);
-    if (data.status === 'ready') {
-      executeIntent(villager, data.intentPacket);
-    }
-  })
-  .catch(err => {
-    pollingFailures++;
-    
-    if (pollingFailures >= 3) {
-      console.warn(`[Layer 8] Falling back to instinct for ${villager.id}`);
-      villager.setDynamicProperty('instinct_mode', true);
-      const instinctAction = applyInstinct(villager);
-      executeIntent(villager, instinctAction);
-    }
-  });
-```
+4. **Implement request timeout**
+   - Add timestamp to each queued request
+   - Remove requests older than 30 seconds from queue
+   - Return fallback intent { action: "idle" } for timed-out requests
+   - Log timeout events for debugging
 
-**Validation:**
-- Stop backend → Villagers switch to instinct mode after 6 seconds
-- Friendly villager waves when LLM offline
-- Hostile context → Villager runs away
+5. **Test priority queue**
+   - Queue 5 requests with different priorities
+   - Verify high-priority requests process first
+   - Damage villager during queue processing
+   - Verify critical request jumps to front of queue
 
 ---
 
-## Feature 8: View Memories Menu
+## Feature 7: Multi-Villager Batch Processing
 
-**Goal:** Display villager's recent memories in UI
+**Deliverable:** Multiple villagers observing same event share single LLM inference.
 
-### Steps:
-1. Create `scripts/ui/memories.js` with memory viewer
-2. Implement HTTP GET to `/api/memory/recent?villagerID={id}&limit=10`
-3. Parse episode data and format for display
-4. Show: Episode summary, vector averages, timestamp, actor name
-5. Add pagination for >10 memories
+### Steps
 
-**Files Created:**
-- `scripts/ui/memories.js`
-- `nodeDB/routes/memory.js` (add GET endpoint)
+1. **Add event deduplication in Brain Scheduler**
+   - Track recent events by coordinates + timestamp
+   - When multiple villagers request inference for same event, group them
+   - Create single LLM request with "multiple observers" context
+   - Store mapping of eventID → [villagerIDs]
 
-**Memories Menu:**
-```javascript
-async function showMemoriesMenu(player, villager) {
-  // Fetch recent memories
-  const response = await http.get(
-    `http://localhost:3000/api/memory/recent?villagerID=${villager.id}&limit=10`
-  );
-  
-  const memories = JSON.parse(response.body).episodes;
-  
-  const form = new ActionFormData()
-    .title(`§6${villager.nameTag}'s Memories`)
-    .body('§7Recent experiences:');
-  
-  for (const memory of memories) {
-    const timeAgo = formatTimeAgo(Date.now() - memory.timestamp);
-    const summary = `§e${memory.actorName || 'Someone'} §7(${timeAgo})\n§7C:${memory.vector_c.toFixed(1)} V:${memory.vector_v.toFixed(1)} S:${memory.vector_s.toFixed(1)}`;
-    form.button(summary);
-  }
-  
-  form.button('§cBack to Hub');
-  
-  form.show(player).then(response => {
-    if (response.canceled || response.selection === memories.length) {
-      showInteractionHub(player, villager);
-    } else {
-      showMemoryDetail(player, villager, memories[response.selection]);
-    }
-  });
-}
-```
+2. **Build multi-observer LLM prompt**
+   - Prompt: "Multiple villagers observed: [event]. Generate a shared understanding."
+   - LLM returns generic interpretation (e.g., "Player is building")
+   - Split response into individual IntentPackets per villager
+   - Adjust responses based on each villager's personality
 
-**Backend Endpoint:**
-```javascript
-router.get('/recent', async (req, res) => {
-  const { villagerID, limit = 10 } = req.query;
-  
-  try {
-    const result = await pool.query(
-      'SELECT * FROM episodes WHERE villager_id = $1 ORDER BY timestamp DESC LIMIT $2',
-      [villagerID, parseInt(limit)]
-    );
-    
-    res.json({ status: 'success', episodes: result.rows });
-  } catch (err) {
-    logger.error({ error: err.message }, '[Layer 5] Memory fetch failed');
-    res.status(500).json({ status: 'error' });
-  }
-});
-```
+3. **Broadcast results to all observers**
+   - Store one IntentPacket per villagerID in pendingIntents Map
+   - Each villager polls independently and receives personalized intent
+   - Log batching efficiency (1 LLM call → N villager responses)
+   - Track token savings in metrics
 
-**Validation:**
-- Open "View Memories" → Shows last 10 episodes
-- Click episode → Shows detailed breakdown
-- Back button → Returns to Hub
+4. **Add concept discovery batching**
+   - When multiple villagers encounter unknown pattern simultaneously
+   - Use first villager's context to label concept
+   - Share labeled concept with all observers immediately
+   - Write concept to each villager's discovery list
+
+5. **Test multi-villager batching**
+   - Spawn 3 villagers within 10 blocks of each other
+   - Perform action visible to all (place nether star)
+   - Verify single LLM call is made (check backend logs)
+   - Confirm all 3 villagers respond appropriately
 
 ---
 
-## Feature 9: DEBUG_MODE Enhancements
+## Testing Checklist
 
-**Goal:** Advanced debugging tools for development
-
-### Steps:
-1. Create `scripts/ui/debug.js` with debug modal UI
-2. Add "View Live State" option: Display current Working Memory values
-3. Add "Force LLM Request" option: Manually trigger Layer 6 inference
-4. Add "Seal Episode" option: Manually close current episode
-5. Add "Clear Memory" option: Delete all episodes for villager (with confirmation)
-
-**Files Created:**
-- `scripts/ui/debug.js`
-- `nodeDB/routes/debug.js`
-
-**Debug Menu:**
-```javascript
-function showDebugMenu(player, villager) {
-  if (!world.getDynamicProperty('DEBUG_MODE')) {
-    player.sendMessage('§cDEBUG_MODE is disabled');
-    return;
-  }
-  
-  const form = new ActionFormData()
-    .title(`§c[DEBUG] ${villager.nameTag}`)
-    .body('§7Developer Tools')
-    .button('§eView Live State\n§7Current vectors & properties')
-    .button('§bForce LLM Request\n§7Trigger inference now')
-    .button('§aSeal Episode\n§7Close current episode')
-    .button('§cClear Memory\n§7Delete all episodes')
-    .button('§7Back to Hub');
-  
-  form.show(player).then(response => {
-    if (response.canceled) return;
-    
-    switch (response.selection) {
-      case 0:
-        showLiveState(player, villager);
-        break;
-      case 1:
-        forceLLMRequest(player, villager);
-        break;
-      case 2:
-        sealEpisode(player, villager);
-        break;
-      case 3:
-        confirmClearMemory(player, villager);
-        break;
-      case 4:
-        showInteractionHub(player, villager);
-        break;
-    }
-  });
-}
-```
-
-**Live State Display:**
-```javascript
-function showLiveState(player, villager) {
-  const state = {
-    moodC: villager.getDynamicProperty('wm_currentMood_C'),
-    moodV: villager.getDynamicProperty('wm_currentMood_V'),
-    moodI: villager.getDynamicProperty('wm_currentMood_I'),
-    moodS: villager.getDynamicProperty('wm_currentMood_S'),
-    moodX: villager.getDynamicProperty('wm_currentMood_X'),
-    focus: villager.getDynamicProperty('wm_currentFocus'),
-    shock: villager.getDynamicProperty('wm_shockState')
-  };
-  
-  const form = new MessageFormData()
-    .title('§eLive State')
-    .body(`§7Current Mood:
-§eC: §f${state.moodC?.toFixed(2) || 'N/A'}
-§bV: §f${state.moodV?.toFixed(2) || 'N/A'}
-§dI: §f${state.moodI?.toFixed(2) || 'N/A'}
-§aS: §f${state.moodS?.toFixed(2) || 'N/A'}
-§6X: §f${state.moodX?.toFixed(2) || 'N/A'}
-
-§7Focus: §f${state.focus || 'None'}
-§7Shock State: §f${state.shock ? 'Yes' : 'No'}`)
-    .button1('§aRefresh')
-    .button2('§cClose');
-  
-  form.show(player).then(response => {
-    if (response.selection === 0) {
-      showLiveState(player, villager); // Refresh
-    } else {
-      showDebugMenu(player, villager);
-    }
-  });
-}
-```
-
-**Validation:**
-- Enable DEBUG_MODE → Debug option appears in Hub
-- View Live State → Shows current DynamicProperties
-- Force LLM Request → Intent appears within 3 seconds
-- Clear Memory → Database entries deleted
+- [ ] Trust scores update correctly based on S axis values
+- [ ] Relationship scores persist across server restarts
+- [ ] Villagers develop personality tags after 20+ episodes
+- [ ] LLM prompts include personality, relationship, and history
+- [ ] Pathfind action moves villagers toward target coordinates
+- [ ] Stare action locks villager's head rotation on target
+- [ ] Flee action moves villagers away from threats
+- [ ] Unknown episodes trigger LLM concept labeling
+- [ ] Labeled concepts are stored and recognized in future episodes
+- [ ] Priority queue processes high-priority requests first
+- [ ] Request batching works for multi-villager observations
+- [ ] Batched concepts are shared among all observers
+- [ ] Network failures don't crash villagers (graceful degradation)
+- [ ] Performance targets maintained (<5ms Fast Gear per event)
 
 ---
 
-## Feature 10: Multi-Event LLM Prompts with Context Assembly
+## Known Limitations at End of Phase 2
 
-**Goal:** LLM receives optimally selected context from multiple event types
+- No player-facing UI (still using ActionBar only)
+- No Debug Dashboard for CRUD operations
+- No gossip system (villagers can't share knowledge verbally)
+- No macro-pattern detection (Spleef not recognized as repeating sub-concepts)
+- No multi-turn conversations (villagers respond once per episode)
+- No instinct fallback system (relies on network/LLM availability)
+- No advanced personality traits (only 5 basic tags)
 
-### Steps:
-1. Update `nodeDB/brain/prompt_builder.js` to handle diverse episodes
-2. Implement context assembly logic: Score memories by Recency, Intensity, and Semantic Similarity to current vector
-3. Add context window management: Summarize older episodes to stay within token limits (512 tokens)
-4. Add event type descriptions: "building session", "chat conversation", "combat encounter"
-5. Test LLM responses with optimized context selection and validate consistency
+---
 
-**Context Assembly Logic:**
-```javascript
-// nodeDB/brain/context_assembler.js
+## File Structure After Phase 2
 
-/**
- * Scores an episode based on recency, intensity, and semantic similarity.
- * @param {Object} episode - Episode from database
- * @param {Object} currentVector - Current [C,V,I,S,X] vector
- * @returns {number} Score (0.0 to 1.0)
- */
-function scoreMemory(episode, currentVector) {
-  const now = Date.now();
-  const age = now - episode.timestamp;
-  
-  // Recency score (exponential decay: 24 hours = 0.5)
-  const recencyScore = Math.exp(-age / (24 * 60 * 60 * 1000));
-  
-  // Intensity score (based on I axis)
-  const intensityScore = Math.abs(episode.vector_i);
-  
-  // Semantic similarity (cosine similarity of vectors)
-  const similarity = cosineSimilarity(
-    [episode.vector_c, episode.vector_v, episode.vector_i, episode.vector_s, episode.vector_x],
-    [currentVector.C, currentVector.V, currentVector.I, currentVector.S, currentVector.X]
-  );
-  const semanticScore = (similarity + 1) / 2; // Normalize to 0-1
-  
-  // Weighted average (40% recency, 30% intensity, 30% semantic)
-  return (recencyScore * 0.4) + (intensityScore * 0.3) + (semanticScore * 0.3);
-}
-
-function cosineSimilarity(vecA, vecB) {
-  const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
-  const magnitudeA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
-  const magnitudeB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
-  return dotProduct / (magnitudeA * magnitudeB);
-}
-
-/**
- * Assembles optimal context from available memories.
- * @param {string} villagerID - Villager entity ID
- * @param {Object} currentVector - Current [C,V,I,S,X] vector
- * @param {number} maxTokens - Maximum tokens for context (default 512)
- * @returns {Promise<Array>} Scored and selected episodes
- */
-async function assembleContext(villagerID, currentVector, maxTokens = 512) {
-  // Fetch last 50 episodes (candidate pool)
-  const episodes = await pool.query(
-    'SELECT * FROM episodes WHERE villager_id = $1 ORDER BY timestamp DESC LIMIT 50',
-    [villagerID]
-  );
-  
-  // Score all episodes
-  const scoredEpisodes = episodes.rows.map(ep => ({
-    ...ep,
-    relevanceScore: scoreMemory(ep, currentVector)
-  }));
-  
-  // Sort by relevance score (descending)
-  scoredEpisodes.sort((a, b) => b.relevanceScore - a.relevanceScore);
-  
-  // Select episodes until token budget exhausted
-  const selectedEpisodes = [];
-  let tokenCount = 0;
-  const avgTokensPerEpisode = 30; // Rough estimate
-  
-  for (const episode of scoredEpisodes) {
-    if (tokenCount + avgTokensPerEpisode > maxTokens) break;
-    selectedEpisodes.push(episode);
-    tokenCount += avgTokensPerEpisode;
-  }
-  
-  // If we have space, add most recent episodes (recency bias)
-  const recentEpisodes = scoredEpisodes.slice(0, 3);
-  for (const recent of recentEpisodes) {
-    if (!selectedEpisodes.find(ep => ep.id === recent.id)) {
-      if (tokenCount + avgTokensPerEpisode <= maxTokens) {
-        selectedEpisodes.push(recent);
-        tokenCount += avgTokensPerEpisode;
-      }
-    }
-  }
-  
-  return selectedEpisodes.sort((a, b) => a.timestamp - b.timestamp); // Chronological order
-}
+```
+Immersive_Villagers BP/
+├── scripts/
+│   ├── layers/
+│   │   ├── layer1_sensory.js
+│   │   ├── layer2_vectorizer.js
+│   │   ├── layer3_sequencer.js              # Enhanced with LLM labeling
+│   │   ├── layer4_working_memory.js
+│   │   └── layer7_action_layer.js           # Enhanced with pathfind/stare/flee
+│   ├── events/
+│   │   ├── player_events.js
+│   │   ├── entity_events.js
+│   │   └── chat_events.js
+│   ├── config/
+│   │   ├── constants.js
+│   │   ├── vector_rules.js
+│   │   └── dynamic_properties_schema.js
+│   ├── utils/
+│   │   ├── vector_math.js
+│   │   ├── entity_helpers.js
+│   │   ├── time_helpers.js
+│   │   ├── debug_logger.js
+│   │   ├── network_helpers.js
+│   │   └── dynamic_properties_helpers.js
+│   └── main.js
+│
+├── nodeDB/
+│   ├── db/
+│   │   ├── pool.js
+│   │   └── schema.sql
+│   ├── queries/
+│   │   ├── episodes.js
+│   │   ├── relationships.js                 # NEW: Relationship scoring
+│   │   ├── identity.js                      # NEW: Personality analysis
+│   │   ├── working_memory.js
+│   │   └── concepts.js
+│   ├── routes/
+│   │   ├── memory.js                        # Enhanced with relationship endpoints
+│   │   ├── brain.js                         # Enhanced with concept labeling
+│   │   └── debug.js
+│   ├── brain/
+│   │   ├── scheduler.js                     # Enhanced with priority queue & batching
+│   │   ├── llm_client.js
+│   │   ├── prompt_builder.js                # Enhanced with personality context
+│   │   └── response_parser.js
+│   ├── middleware/
+│   │   ├── validate.js
+│   │   ├── logger.js
+│   │   └── error.js
+│   ├── utils/
+│   │   └── logger.js
+│   ├── app.js
+│   ├── server.js
+│   ├── package.json
+│   └── .env
+│
+└── _docs/
+    └── phases/
+        ├── phase0-setup.md
+        ├── phase1-mvp.md
+        └── phase2-enhancement.md            # THIS FILE
 ```
 
-**Context Window Management:**
-```javascript
-// nodeDB/brain/context_summarizer.js
+---
 
-/**
- * Summarizes old episodes to save tokens while preserving key information.
- * @param {Array} episodes - Episodes to summarize
- * @returns {string} Compact summary
- */
-function summarizeOldEpisodes(episodes) {
-  if (episodes.length === 0) return '';
-  
-  // Group by day
-  const grouped = {};
-  for (const ep of episodes) {
-    const date = new Date(ep.timestamp).toDateString();
-    if (!grouped[date]) grouped[date] = [];
-    grouped[date].push(ep);
-  }
-  
-  const summaries = [];
-  for (const [date, dayEpisodes] of Object.entries(grouped)) {
-    const avgC = average(dayEpisodes.map(e => e.vector_c));
-    const avgS = average(dayEpisodes.map(e => e.vector_s));
-    const eventCount = dayEpisodes.length;
-    
-    summaries.push(`${date}: ${eventCount} interactions (C:${avgC.toFixed(1)}, S:${avgS.toFixed(1)})`);
-  }
-  
-  return summaries.join(', ');
-}
+## Example Scenario (Enhanced Features Demo)
 
-/**
- * Counts approximate tokens in a string.
- * @param {string} text - Text to count
- * @returns {number} Approximate token count
- */
-function estimateTokenCount(text) {
-  // Rough estimate: 1 token ≈ 4 characters
-  return Math.ceil(text.length / 4);
-}
-```
+### Setup
+- Villager "Barrel" (personality: loves_building, is_social)
+- Player "Steve" (trust score with Barrel: 0.8 after 15 interactions)
+- Player "Alex" (trust score with Barrel: 0.3 after 2 interactions)
 
-**Enhanced Prompt with Context Assembly:**
-```javascript
-function buildPrompt(villagerContext) {
-  const { villagerID, currentVector, relationshipScore, identityTags, gossip } = villagerContext;
-  
-  // Assemble optimal context
-  const selectedEpisodes = await assembleContext(villagerID, currentVector, 512);
-  
-  // Separate recent (last 5) from older
-  const recentEpisodes = selectedEpisodes.slice(-5);
-  const olderEpisodes = selectedEpisodes.slice(0, -5);
-  
-  // Format recent episodes in detail
-  const recentDescriptions = recentEpisodes.map(ep => {
-    const type = classifyEpisode(ep);
-    return `- ${type}: C=${ep.vector_c.toFixed(1)}, V=${ep.vector_v.toFixed(1)}, S=${ep.vector_s.toFixed(1)} (${formatDuration(ep.duration)})`;
-  }).join('\n');
-  
-  // Summarize older episodes
-  const olderSummary = summarizeOldEpisodes(olderEpisodes);
-  
-  const prompt = `You are Villager ${villagerID}. You are observing Player ${villagerContext.actorID}.
+### Interaction Flow
 
-Recent Activity (Last 5):
-${recentDescriptions}
+#### Scenario A: High-Trust Player Builds
 
-${olderSummary ? `Earlier Memories:\n${olderSummary}\n` : ''}
-What You've Been Told:
-${gossip.map(g => `- ${g.fact}`).join('\n')}
+1. **T=0s:** Steve places redstone dust near Barrel
+2. **Layer 2:** Calculates [C: 0.7, V: 0.5, I: 0.2, S: 0.8, X: 0.9]
+3. **Layer 3:** Matches to "Redstone Building" concept (known)
+4. **Layer 5:** Updates trust score (0.8 → 0.82 due to high S)
+5. **Layer 6:** LLM prompt includes: "You trust Steve highly. He's building with redstone."
+6. **LLM Response:** { action: "stare", speechText: "Ooh, redstone! What are you making?" }
+7. **Layer 7:** Villager locks head rotation on Steve and speaks
+8. **Result:** Barrel watches Steve with friendly curiosity
 
-Your Relationship with this Player:
-- Trust Score: ${relationshipScore.toFixed(2)}
-- Total Interactions: ${villagerContext.interactionCount}
+#### Scenario B: Low-Trust Player Destroys
 
-Your Personality:
-- ${identityTags.join(', ')}
+1. **T=0s:** Alex breaks Barrel's workstation (anvil)
+2. **Layer 2:** Calculates [C: -0.9, V: 0.8, I: 0.6, S: -0.9, X: 0.2]
+3. **Layer 5:** Updates trust score (0.3 → 0.1 due to negative S)
+4. **Layer 6:** LLM prompt includes: "You barely know Alex. They destroyed your anvil!"
+5. **LLM Response:** { action: "flee", speechText: "Hey! That was mine!" }
+6. **Layer 7:** Villager shouts and runs 20 blocks away
+7. **Result:** Barrel exhibits defensive behavior toward untrusted player
 
-Based on this context, generate a JSON response:
-{
-  "action": "speak|pathfind|build|gesture|idle",
-  "speechText": "What you want to say (if speaking)",
-  "targetLocation": { "x": 0, "y": 0, "z": 0 } (if pathfinding),
-  "blockType": "minecraft:dirt" (if building),
-  "internalMonologue": "What you're thinking"
-}
+#### Scenario C: Multi-Villager Batching
 
-Response (JSON only):`;
-  
-  // Verify token count
-  const tokenCount = estimateTokenCount(prompt);
-  if (tokenCount > 512) {
-    logger.warn({ villagerID, tokenCount }, '[Prompt Builder] Token limit exceeded, truncating');
-    // Fallback: Use only recent 3 episodes
-    return buildMinimalPrompt(villagerContext);
-  }
-  
-  return prompt;
-}
-
-function classifyEpisode(episode) {
-  if (episode.vector_c > 0.5) return 'Building session';
-  if (episode.vector_c < -0.5) return 'Destruction';
-  if (episode.vector_s > 0.6) return 'Friendly interaction';
-  if (episode.vector_s < -0.6) return 'Hostile encounter';
-  if (episode.vector_i > 0.7) return 'Intense event';
-  return 'Observation';
-}
-```
-
-**Files Created:**
-- `nodeDB/brain/context_assembler.js`
-- `nodeDB/brain/context_summarizer.js`
-
-**Validation:**
-- Recent episodes include building + chat → LLM responds appropriately
-- High trust score → LLM generates friendly responses
-- Identity tags → LLM maintains personality consistency
-- Similar past event → Memory with high semantic similarity score selected
-- Token count stays under 512 → Older episodes summarized, not truncated
-- Context assembly prioritizes most relevant memories over chronological order
+1. **T=0s:** Player places nether star (rare event)
+2. **Layer 1:** 3 nearby villagers all detect event (proximity: 8, 12, 15 blocks)
+3. **Brain Scheduler:** Detects duplicate event (same coordinates/time)
+4. **Batching:** Collapses 3 requests into 1 LLM call
+5. **LLM Prompt:** "Three villagers observed a rare nether star placement. Generate shared reaction."
+6. **LLM Response:** Generic understanding ("This is very valuable!")
+7. **Personalization:** Each villager's response adjusted for personality
+   - Barrel (loves_building): "That star will look amazing in your build!"
+   - Grumpy (is_cautious): "Don't waste it on something silly."
+   - Curious (is_social): "Where did you find that?!"
+8. **Result:** All 3 villagers respond uniquely but coherently
 
 ---
 
-## Performance Targets (Phase 2)
+## Performance Targets
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Pathfinding smoothness | 20 updates/sec | Teleport every tick |
-| Speech display latency | <100ms | ActionBar update |
-| UI menu open time | <200ms | Form rendering |
-| Gossip write latency | <150ms | HTTP POST + DB write |
-| Identity analysis time | <500ms | Batch every 5 episodes |
-| Memory fetch latency | <100ms | 10 episodes from DB |
-| Context assembly time | <200ms | Score 50 memories, select best |
-| Prompt token count | <512 tokens | Ensure LLM context fits |
-
----
-
-## Testing Strategy
-
-### Feature Tests
-- Physical actions: Test pathfinding to 10 different locations
-- Speech display: Verify multi-line messages render correctly
-- UI navigation: Test all menu flows with back buttons
-- Gossip system: Whisper 5 facts, verify in database
-- Multi-event support: Trigger 3+ event types, verify vectors
-- Identity tags: Generate tags from 20 diverse episodes
-- Instinct fallback: Stop backend, verify fallback within 10 seconds
-
-### Integration Tests
-- Complete interaction flow: Hub → Gossip → Whisper → Back
-- LLM with gossip: Verify gossip appears in prompt
-- Memory viewer: Fetch 20 episodes, verify pagination
-- Context assembly: Create 50 episodes, verify highest scored memories selected
-- Token management: Verify prompts with 100+ episodes stay under 512 tokens
+| Feature | Target Latency | Notes |
+|---------|---------------|-------|
+| Relationship score update | +10-20ms | Added to Layer 5 write transaction |
+| Personality analysis | 50-100ms | Runs every 5 minutes, not per-event |
+| Context-aware prompt build | +50-100ms | Fetches additional data from PostgreSQL |
+| LLM inference (with context) | 3-5s | Increased from 2-4s due to richer prompts |
+| Advanced actions (pathfind) | <2ms | DynamicProperty updates only |
+| Priority queue sorting | <1ms | In-memory array sort |
+| Request batching | <5ms | Event deduplication logic |
+| **Total (Fast Gear)** | **Still <5ms/event** ✅ | Backend latency is async |
 
 ---
 
-## Known Limitations (Post-Phase 2)
+## Estimated Complexity
 
-**Remaining Work for Phase 3:**
-- No rate limiting on LLM requests
-- No villager-to-villager gossip sharing
-- No advanced pathfinding (uses simple teleportation)
-- No performance optimizations for 20+ villagers
-- No persistence of UI state across sessions
-
----
-
-## Next Phase Preview
-
-**Phase 3 (Polish & Optimization)** will add:
-- Performance profiling and optimization
-- Advanced pathfinding with A* algorithm
-- Villager-to-villager gossip exchange
-- Rate limiting and request throttling
-- Comprehensive error recovery
-- Production deployment guides
+**Time Investment:** Moderate (builds on MVP foundation)  
+**Technical Difficulty:** Medium-High (relationship math, batching logic)  
+**Dependencies:** Phase 1 complete, stable network communication  
+**Risk Level:** Medium (LLM quality depends on prompt engineering)
 
 ---
 
 **Document Type:** Phase Plan  
 **Phase:** 2 (Enhancement)  
 **Status:** Ready for Implementation  
-**Last Updated:** Feb 23, 2026
+**Version:** 1.0  
+**Last Updated:** Feb 24, 2026

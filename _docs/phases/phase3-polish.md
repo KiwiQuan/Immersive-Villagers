@@ -1,1234 +1,694 @@
-# Phase 3: Polish & Optimization — Production Ready
+# ✨ Phase 3: Polish (UI & Advanced Features)
 
-**Status:** Polish & Optimization Phase  
-**Goal:** Optimize performance, add advanced features, prepare for production  
-**Deliverable:** Scalable system supporting 20+ villagers with polished UX  
-**Duration Target:** 5-7 implementation sessions
+## Goal
 
----
-
-## Overview
-
-This phase focuses on performance optimization, advanced features, comprehensive error handling, and production readiness. The system will scale efficiently, handle edge cases gracefully, and provide a polished experience for both players and server operators.
-
-**Success Criteria:**
-- System supports 20+ active villagers without lag
-- Advanced pathfinding with obstacle avoidance
-- Villager-to-villager gossip and knowledge sharing
-- Comprehensive rate limiting and throttling
-- Production monitoring and alerting
-- Complete documentation and deployment guides
+Complete the system with **player-facing UI, macro-pattern recognition, gossip system, and production-ready polish**. This phase delivers a fully-featured, user-friendly experience with comprehensive debug tools and advanced cognitive capabilities.
 
 ---
 
-## Feature 1: Performance Profiling & Optimization
+## Success Criteria
 
-**Goal:** Identify and eliminate performance bottlenecks
-
-### Steps:
-1. Add performance metrics collection: Track tick time per layer
-2. Implement profiling endpoints: `/api/metrics/performance`
-3. Optimize Layer 1 filters: Use spatial partitioning for proximity checks
-4. Batch database writes: Group multiple episode writes into single transaction
-5. Add caching layer: Cache frequently accessed data (relationships, identity tags)
-
-**Files Created:**
-- `scripts/utils/performance_monitor.js`
-- `nodeDB/utils/metrics.js`
-- `nodeDB/middleware/cache.js`
-
-**Performance Monitor:**
-```javascript
-// scripts/utils/performance_monitor.js
-const layerMetrics = new Map();
-
-export function trackLayerPerformance(layerName, executionTime) {
-  if (!layerMetrics.has(layerName)) {
-    layerMetrics.set(layerName, { total: 0, count: 0, max: 0 });
-  }
-  
-  const metrics = layerMetrics.get(layerName);
-  metrics.total += executionTime;
-  metrics.count++;
-  metrics.max = Math.max(metrics.max, executionTime);
-}
-
-export function getLayerMetrics() {
-  const report = {};
-  for (const [layer, data] of layerMetrics) {
-    report[layer] = {
-      average: data.total / data.count,
-      max: data.max,
-      calls: data.count
-    };
-  }
-  return report;
-}
-
-// Usage in layers
-const start = Date.now();
-// ... layer logic ...
-trackLayerPerformance('Layer1_Sensory', Date.now() - start);
-```
-
-**Database Write Batching:**
-```javascript
-// nodeDB/utils/batch_writer.js
-class BatchWriter {
-  constructor() {
-    this.episodeQueue = [];
-    this.flushInterval = 2000; // 2 seconds
-    this.maxBatchSize = 10;
-    
-    setInterval(() => this.flush(), this.flushInterval);
-  }
-  
-  enqueue(episode) {
-    this.episodeQueue.push(episode);
-    
-    if (this.episodeQueue.length >= this.maxBatchSize) {
-      this.flush();
-    }
-  }
-  
-  async flush() {
-    if (this.episodeQueue.length === 0) return;
-    
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      
-      for (const episode of this.episodeQueue) {
-        await client.query(
-          'INSERT INTO episodes (villager_id, actor_id, vector_c, vector_v, vector_i, vector_s, vector_x, duration, event_count, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-          [episode.villagerID, episode.actorID, episode.vectorAverage.C, episode.vectorAverage.V, episode.vectorAverage.I, episode.vectorAverage.S, episode.vectorAverage.X, episode.duration, episode.eventCount, episode.timestamp]
-        );
-      }
-      
-      await client.query('COMMIT');
-      logger.info({ batchSize: this.episodeQueue.length }, '[BatchWriter] Flushed episode batch');
-      this.episodeQueue = [];
-    } catch (err) {
-      await client.query('ROLLBACK');
-      logger.error({ error: err.message }, '[BatchWriter] Batch write failed');
-    } finally {
-      client.release();
-    }
-  }
-}
-
-const batchWriter = new BatchWriter();
-module.exports = batchWriter;
-```
-
-**Spatial Partitioning:**
-```javascript
-// scripts/utils/spatial_grid.js
-class SpatialGrid {
-  constructor(cellSize = 32) {
-    this.cellSize = cellSize;
-    this.grid = new Map();
-  }
-  
-  getCellKey(x, z) {
-    const cellX = Math.floor(x / this.cellSize);
-    const cellZ = Math.floor(z / this.cellSize);
-    return `${cellX},${cellZ}`;
-  }
-  
-  insert(entity) {
-    const key = this.getCellKey(entity.location.x, entity.location.z);
-    if (!this.grid.has(key)) {
-      this.grid.set(key, new Set());
-    }
-    this.grid.get(key).add(entity.id);
-  }
-  
-  getNearby(location, radius) {
-    const minX = location.x - radius;
-    const maxX = location.x + radius;
-    const minZ = location.z - radius;
-    const maxZ = location.z + radius;
-    
-    const nearby = new Set();
-    
-    for (let x = minX; x <= maxX; x += this.cellSize) {
-      for (let z = minZ; z <= maxZ; z += this.cellSize) {
-        const key = this.getCellKey(x, z);
-        const cell = this.grid.get(key);
-        if (cell) {
-          for (const entityID of cell) {
-            nearby.add(entityID);
-          }
-        }
-      }
-    }
-    
-    return Array.from(nearby);
-  }
-  
-  clear() {
-    this.grid.clear();
-  }
-}
-
-export const villagerGrid = new SpatialGrid();
-```
-
-**Validation:**
-- Performance metrics endpoint shows <5ms average for Layers 1-4
-- Batch writer reduces database load by 70%
-- Spatial partitioning reduces proximity checks by 80%
+- Players can interact with villagers via immersive UI menus
+- Villagers recognize complex patterns (Spleef, Tag, minigames)
+- Villagers can gossip and share knowledge with each other
+- Multi-turn conversations work (villagers remember chat context)
+- Debug Dashboard provides full CRUD operations on villager data
+- Instinct fallback system handles network/LLM failures gracefully
+- Performance optimizations ensure 20 TPS with 20+ active villagers
+- System is production-ready with error monitoring and logging
 
 ---
 
-## Feature 2: Advanced Pathfinding
+## Feature 1: Interaction Hub (Main UI)
 
-**Goal:** Implement A* pathfinding with obstacle avoidance
+**Deliverable:** Player-facing menu for interacting with villagers.
 
-### Steps:
-1. Create `scripts/utils/pathfinding.js` with A* algorithm implementation
-2. Build navigation grid from world blocks (walkable vs. obstacles)
-3. Cache navigation data in DynamicProperties (per-villager memory of area)
-4. Implement smooth path interpolation for natural movement
-5. Add path recalculation when blocked
+### Steps
 
-**Files Created:**
-- `scripts/utils/pathfinding.js`
-- `scripts/utils/navigation_grid.js`
+1. **Create hub menu (`scripts/ui/hub.js`)**
+   - Build ActionFormData with villager name and ID in title
+   - Display dynamic greeting based on trust score and mood
+   - Show current mood vector (collapsed view)
+   - Add buttons: Gossip & Whisper, View Memories, Relationship Status, Leave
 
-**A* Pathfinding:**
-```javascript
-// scripts/utils/pathfinding.js
-function findPath(start, goal, dimension) {
-  const openSet = [{ pos: start, g: 0, h: heuristic(start, goal), f: heuristic(start, goal), parent: null }];
-  const closedSet = new Set();
-  
-  while (openSet.length > 0) {
-    // Sort by f score
-    openSet.sort((a, b) => a.f - b.f);
-    const current = openSet.shift();
-    
-    // Goal reached
-    if (distance(current.pos, goal) < 1.0) {
-      return reconstructPath(current);
-    }
-    
-    closedSet.add(posKey(current.pos));
-    
-    // Check neighbors
-    const neighbors = getWalkableNeighbors(current.pos, dimension);
-    for (const neighbor of neighbors) {
-      const key = posKey(neighbor);
-      if (closedSet.has(key)) continue;
-      
-      const g = current.g + distance(current.pos, neighbor);
-      const h = heuristic(neighbor, goal);
-      const f = g + h;
-      
-      const existing = openSet.find(n => posKey(n.pos) === key);
-      if (existing && g >= existing.g) continue;
-      
-      if (existing) {
-        existing.g = g;
-        existing.f = f;
-        existing.parent = current;
-      } else {
-        openSet.push({ pos: neighbor, g, h, f, parent: current });
-      }
-    }
-  }
-  
-  // No path found
-  return null;
-}
+2. **Implement entity interaction trigger**
+   - Subscribe to playerInteractWithEntity event
+   - Check if entity is AI-tagged villager
+   - Verify backend is online via /api/health check
+   - Open hub menu if checks pass
 
-function reconstructPath(node) {
-  const path = [];
-  let current = node;
-  while (current) {
-    path.unshift(current.pos);
-    current = current.parent;
-  }
-  return path;
-}
+3. **Add proximity monitoring**
+   - Start interval loop when menu opens
+   - Check distance between player and villager every 10 ticks
+   - Auto-close menu if distance > 10 blocks
+   - Display message: "You walked too far from [Villager]"
 
-function getWalkableNeighbors(pos, dimension) {
-  const neighbors = [];
-  const offsets = [
-    { x: 1, z: 0 }, { x: -1, z: 0 },
-    { x: 0, z: 1 }, { x: 0, z: -1 },
-    { x: 1, z: 1 }, { x: -1, z: -1 },
-    { x: 1, z: -1 }, { x: -1, z: 1 }
-  ];
-  
-  for (const offset of offsets) {
-    const neighbor = {
-      x: pos.x + offset.x,
-      y: pos.y,
-      z: pos.z + offset.z
-    };
-    
-    // Check if walkable
-    const blockBelow = dimension.getBlock(neighbor);
-    const blockAt = dimension.getBlock({ x: neighbor.x, y: neighbor.y + 1, z: neighbor.z });
-    
-    if (blockBelow && blockBelow.isSolid && (!blockAt || !blockAt.isSolid)) {
-      neighbors.push(neighbor);
-    }
-  }
-  
-  return neighbors;
-}
+4. **Create menu helpers (`scripts/ui/helpers.js`)**
+   - buildMenuTitle(title, villagerName, villagerID)
+   - formatTimestamp(timestamp) → "5 minutes ago"
+   - buildMoodDisplay(vector, showLabels) → formatted [C,V,I,S,X]
+   - Export helper functions
 
-function heuristic(a, b) {
-  // Manhattan distance
-  return Math.abs(a.x - b.x) + Math.abs(a.z - b.z);
-}
-
-function distance(a, b) {
-  return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.z - b.z, 2));
-}
-
-function posKey(pos) {
-  return `${Math.floor(pos.x)},${Math.floor(pos.y)},${Math.floor(pos.z)}`;
-}
-```
-
-**Path Following:**
-```javascript
-// In scripts/layers/layer7_action.js
-function followPath(villager) {
-  const pathJSON = villager.getDynamicProperty('current_path');
-  if (!pathJSON) return;
-  
-  const path = JSON.parse(pathJSON);
-  const pathIndex = villager.getDynamicProperty('path_index') || 0;
-  
-  if (pathIndex >= path.length) {
-    // Path complete
-    villager.setDynamicProperty('is_pathfinding', false);
-    villager.setDynamicProperty('current_path', undefined);
-    return;
-  }
-  
-  const target = path[pathIndex];
-  const currentLoc = villager.location;
-  
-  if (distance(currentLoc, target) < 0.5) {
-    // Reached waypoint, move to next
-    villager.setDynamicProperty('path_index', pathIndex + 1);
-    return;
-  }
-  
-  // Move toward waypoint
-  const dx = (target.x - currentLoc.x);
-  const dz = (target.z - currentLoc.z);
-  const dist = Math.sqrt(dx * dx + dz * dz);
-  
-  villager.teleport({
-    x: currentLoc.x + (dx / dist) * 0.3,
-    y: target.y,
-    z: currentLoc.z + (dz / dist) * 0.3
-  });
-}
-```
-
-**Validation:**
-- Villager navigates around walls to reach destination
-- Path recalculates when blocked by new obstacle
-- Movement appears smooth and natural
+5. **Test hub menu**
+   - Interact with villager in-game
+   - Verify menu opens with correct data
+   - Test navigation buttons
+   - Walk away and verify auto-close
 
 ---
 
-## Feature 3: Villager-to-Villager Gossip
+## Feature 2: Gossip & Whisper Menu
 
-**Goal:** Villagers share knowledge with each other
+**Deliverable:** Players can view villager memories and send natural language whispers.
 
-### Steps:
-1. Add villager proximity detection: Villagers within 5 blocks can gossip
-2. Implement automatic gossip sharing: Every 60 seconds, share random fact with nearby villager
-3. Create gossip propagation algorithm: Facts spread through network over time
-4. Add confidence decay: Old gossip becomes less reliable (confidence drops)
-5. Display gossip chains in debug menu: Show how facts spread
+### Steps
 
-**Files Created:**
-- `scripts/systems/gossip_network.js`
-- `nodeDB/queries/gossip_propagation.js`
+1. **Create gossip menu (`scripts/ui/gossip.js`)**
+   - Fetch last 5 episodes from backend (GET /api/memory/gossip)
+   - Display episode summaries with timestamps
+   - Add buttons: Whisper, Refresh Gossip, View Full Log, Back
+   - Show loading state while fetching data
 
-**Gossip Sharing System:**
-```javascript
-// scripts/systems/gossip_network.js
-system.runInterval(() => {
-  const villagers = world.getDimension('overworld').getEntities({ type: 'minecraft:villager_v2' });
-  
-  for (const villager of villagers) {
-    if (!villager.isValid()) continue;
-    
-    // Find nearby villagers
-    const nearby = villagers.filter(other => 
-      other.id !== villager.id &&
-      other.isValid() &&
-      distance(villager.location, other.location) < 5.0
-    );
-    
-    if (nearby.length === 0) continue;
-    
-    // Share a random fact
-    http.get(`http://localhost:3000/api/gossip/random?villagerID=${villager.id}`)
-      .then(response => {
-        const data = JSON.parse(response.body);
-        if (data.status === 'success' && data.fact) {
-          // Share with random nearby villager
-          const recipient = nearby[Math.floor(Math.random() * nearby.length)];
-          
-          http.post('http://localhost:3000/api/gossip/share', {
-            body: JSON.stringify({
-              sourceVillagerID: villager.id,
-              targetVillagerID: recipient.id,
-              fact: data.fact,
-              originalConfidence: data.confidence
-            })
-          });
-        }
-      });
-  }
-}, 1200); // Every 60 seconds
-```
+2. **Implement whisper input modal**
+   - Create ModalFormData with text field (256 char limit)
+   - Add input sanitization (remove control chars, check profanity)
+   - Send whisper to backend as special event (POST /api/memory/whisper)
+   - Show optimistic feedback: "Whisper sent! Villager is thinking..."
 
-**Gossip Propagation Logic:**
-```javascript
-// nodeDB/queries/gossip_propagation.js
-async function shareGossip(sourceVillagerID, targetVillagerID, fact, originalConfidence) {
-  const client = await pool.connect();
-  try {
-    // Check if target already knows this fact
-    const existing = await client.query(
-      'SELECT confidence FROM gossip WHERE villager_id = $1 AND fact = $2',
-      [targetVillagerID, fact]
-    );
-    
-    if (existing.rows.length > 0) {
-      // Already knows, maybe reinforce confidence
-      const newConfidence = Math.min(existing.rows[0].confidence + 0.1, 1.0);
-      await client.query(
-        'UPDATE gossip SET confidence = $1 WHERE villager_id = $2 AND fact = $3',
-        [newConfidence, targetVillagerID, fact]
-      );
-    } else {
-      // New knowledge, reduce confidence slightly (second-hand info)
-      const reducedConfidence = originalConfidence * 0.9;
-      await client.query(
-        'INSERT INTO gossip (villager_id, fact, source_type, source_id, confidence, timestamp) VALUES ($1, $2, $3, $4, $5, $6)',
-        [targetVillagerID, fact, 'villager', sourceVillagerID, reducedConfidence, Date.now()]
-      );
-    }
-  } finally {
-    client.release();
-  }
-}
-```
+3. **Add whisper processing in backend**
+   - Create /api/memory/whisper endpoint
+   - Convert whisper text to semantic vector (high S, medium X)
+   - Create episode with single vector (whisper event)
+   - Queue LLM request to generate verbal response
 
-**Confidence Decay:**
-```javascript
-// Run daily via cron or scheduled job
-async function decayGossipConfidence() {
-  await pool.query(
-    'UPDATE gossip SET confidence = GREATEST(confidence * 0.95, 0.1) WHERE timestamp < $1',
-    [Date.now() - (7 * 24 * 60 * 60 * 1000)] // Facts older than 7 days
-  );
-  
-  logger.info('[Gossip] Applied confidence decay to old gossip');
-}
-```
+4. **Implement async feedback for whispers**
+   - Poll /api/brain/poll every 2 seconds (max 10 attempts)
+   - Display loading states during polling
+   - Show villager's response via ActionBar when ready
+   - Fallback to "..." if LLM times out
 
-**Validation:**
-- Whisper fact to Villager A → Within 2 minutes, nearby Villager B learns it
-- Check database: Both villagers have the fact with different confidence scores
-- Old gossip decays over time
+5. **Test gossip & whisper**
+   - Open gossip menu and verify memories load
+   - Send whisper: "Do you like diamonds?"
+   - Wait for villager response (2-5 seconds)
+   - Verify response reflects personality and trust score
 
 ---
 
-## Feature 4: Rate Limiting & Throttling
+## Feature 3: Debug Dashboard (Full CRUD)
 
-**Goal:** Prevent system overload from excessive requests
+**Deliverable:** Comprehensive developer tools for manipulating villager data.
 
-### Steps:
-1. Add LLM request rate limiter: Max 1 request per villager per 5 seconds
-2. Implement Brain Scheduler queue limits: Max 20 requests queued
-3. Add HTTP request throttling: Max 100 req/sec from Script API
-4. Implement exponential backoff for failed requests
-5. Add rate limit headers in API responses
+### Steps
 
-**Files Created:**
-- `nodeDB/middleware/rate_limit.js`
-- `scripts/utils/request_throttle.js`
+1. **Create debug modal (`scripts/ui/debug.js`)**
+   - Show Working Memory state (focus, mood, shock, last update)
+   - Show current episode (if open) with vector count and average
+   - Add buttons: View Live Vectors, Seal Episode, Clear Memory, Force LLM, etc.
+   - Restrict access to admins (check player.hasTag('admin'))
 
-**LLM Rate Limiter:**
-```javascript
-// In nodeDB/brain/scheduler.js
-class BrainScheduler {
-  constructor() {
-    this.queue = [];
-    this.pendingIntents = new Map();
-    this.lastRequestTime = new Map(); // villagerID → timestamp
-    this.rateLimitWindow = 5000; // 5 seconds
-    this.maxQueueSize = 20;
-  }
-  
-  enqueue(request) {
-    // Check rate limit
-    const lastTime = this.lastRequestTime.get(request.villagerID) || 0;
-    const now = Date.now();
-    
-    if (now - lastTime < this.rateLimitWindow) {
-      logger.warn({ villagerID: request.villagerID }, '[Brain Scheduler] Rate limited');
-      return { status: 'rate_limited', retryAfter: this.rateLimitWindow - (now - lastTime) };
-    }
-    
-    // Check queue size
-    if (this.queue.length >= this.maxQueueSize) {
-      logger.warn('[Brain Scheduler] Queue full, rejecting request');
-      return { status: 'queue_full' };
-    }
-    
-    this.lastRequestTime.set(request.villagerID, now);
-    
-    const requestID = `req_${now}_${request.villagerID}`;
-    this.queue.push({ requestID, ...request, timestamp: now });
-    
-    if (!this.isProcessing) this.processQueue();
-    
-    return { status: 'queued', requestID };
-  }
-}
-```
+2. **Implement live vector stream**
+   - Fetch last 10 vectors from Layer 2 (stored in temp buffer)
+   - Display in scrollable MessageFormData
+   - Auto-refresh every 2 seconds
+   - Show raw event name, vector values, timestamp
 
-**HTTP Rate Limiter Middleware:**
-```javascript
-// nodeDB/middleware/rate_limit.js
-const requestCounts = new Map();
+3. **Add CRUD operations**
+   - Clear Working Memory: Reset all DynamicProperties to defaults
+   - Seal Episode: Force Layer 3 to seal current episode immediately
+   - Force LLM Request: Manually queue high-priority LLM inference
+   - Edit Relationship Score: Modal input to set trust score manually
 
-function rateLimitMiddleware(req, res, next) {
-  const clientIP = req.ip;
-  const now = Date.now();
-  const windowSize = 1000; // 1 second
-  const maxRequests = 100;
-  
-  if (!requestCounts.has(clientIP)) {
-    requestCounts.set(clientIP, []);
-  }
-  
-  const requests = requestCounts.get(clientIP);
-  
-  // Remove old requests outside window
-  const recent = requests.filter(timestamp => now - timestamp < windowSize);
-  
-  if (recent.length >= maxRequests) {
-    return res.status(429).json({
-      status: 'error',
-      message: 'Rate limit exceeded',
-      retryAfter: windowSize
-    });
-  }
-  
-  recent.push(now);
-  requestCounts.set(clientIP, recent);
-  
-  next();
-}
+4. **Create debug endpoints in backend**
+   - POST /api/debug/clear-memory: Delete episodes for villagerID
+   - POST /api/debug/reset-relationship: Reset trust score to 0.5
+   - GET /api/debug/queue-status: Return Brain Scheduler queue state
+   - POST /api/debug/force-sync: Bypass debounce, sync WM immediately
 
-module.exports = rateLimitMiddleware;
-```
-
-**Exponential Backoff:**
-```javascript
-// scripts/utils/request_throttle.js
-async function requestWithBackoff(url, options, maxRetries = 3) {
-  let retries = 0;
-  let delay = 1000; // Start with 1 second
-  
-  while (retries < maxRetries) {
-    try {
-      const response = await http.post(url, options);
-      return response;
-    } catch (err) {
-      retries++;
-      
-      if (retries >= maxRetries) {
-        throw new Error(`Max retries reached: ${err.message}`);
-      }
-      
-      console.warn(`[Retry ${retries}] Request failed, retrying in ${delay}ms`);
-      await sleep(delay);
-      delay *= 2; // Exponential backoff
-    }
-  }
-}
-
-function sleep(ms) {
-  return new Promise(resolve => system.runTimeout(resolve, ms / 50)); // Convert to ticks
-}
-```
-
-**Validation:**
-- Send 10 requests in 1 second from same villager → Only 2 processed
-- Queue fills to 20 → New requests rejected with queue_full
-- HTTP endpoint receives 150 req/sec → Returns 429 after 100
+5. **Test debug tools**
+   - Enable DEBUG_MODE in-game
+   - Open debug dashboard
+   - Force LLM request and verify response
+   - Clear Working Memory and confirm reset
+   - Check backend queue status endpoint
 
 ---
 
-## Feature 5: Advanced Error Recovery
+## Feature 4: Macro-Pattern Detection (Tier B)
 
-**Goal:** Graceful handling of all failure scenarios
+**Deliverable:** Layer 3 recognizes complex repeating patterns like Spleef, Tag, minigames.
 
-### Steps:
-1. Add health check monitoring: Detect when services are down
-2. Implement automatic service restart attempts
-3. Add circuit breaker pattern: Stop calling failed services temporarily
-4. Create fallback data: Use cached/stale data when fresh data unavailable
-5. Add comprehensive error logging with context
+### Steps
 
-**Files Created:**
-- `nodeDB/utils/health_monitor.js`
-- `nodeDB/utils/circuit_breaker.js`
-- `scripts/utils/error_handler.js`
+1. **Add Tier B buffer to Layer 3 Sequencer**
+   - Maintain chronological list of sealed Sub-Concept labels
+   - Track last 10 minutes of Sub-Concepts per villager
+   - Example: ["Mining", "Falling", "Chatting", "Mining", "Falling"]
+   - Store in DynamicProperty as JSON string (tier_b_buffer)
 
-**Health Monitor:**
-```javascript
-// nodeDB/utils/health_monitor.js
-class HealthMonitor {
-  constructor() {
-    this.services = {
-      database: { healthy: true, lastCheck: 0 },
-      llm: { healthy: true, lastCheck: 0 }
-    };
-    
-    this.checkInterval = 30000; // 30 seconds
-    setInterval(() => this.checkAll(), this.checkInterval);
-  }
-  
-  async checkAll() {
-    await this.checkDatabase();
-    await this.checkLLM();
-  }
-  
-  async checkDatabase() {
-    try {
-      const result = await pool.query('SELECT 1');
-      this.services.database.healthy = true;
-      this.services.database.lastCheck = Date.now();
-    } catch (err) {
-      this.services.database.healthy = false;
-      logger.error({ error: err.message }, '[Health] Database check failed');
-    }
-  }
-  
-  async checkLLM() {
-    try {
-      const response = await axios.get('http://localhost:8080/health', { timeout: 2000 });
-      this.services.llm.healthy = true;
-      this.services.llm.lastCheck = Date.now();
-    } catch (err) {
-      this.services.llm.healthy = false;
-      logger.error({ error: err.message }, '[Health] LLM check failed');
-    }
-  }
-  
-  isHealthy(service) {
-    return this.services[service]?.healthy || false;
-  }
-  
-  getStatus() {
-    return this.services;
-  }
-}
+2. **Implement pattern detection algorithm**
+   - Search buffer for repeating sequences (3+ repetitions)
+   - Use simple substring matching or sliding window
+   - If pattern found (e.g., ["Mining", "Falling"] repeats 3 times), flag Macro-Concept
+   - Send pattern to LLM for naming
 
-const healthMonitor = new HealthMonitor();
-module.exports = healthMonitor;
-```
+3. **Create Macro-Concept labeling**
+   - POST /api/brain/label-macro with pattern sequence
+   - LLM prompt: "This sequence repeated: [Mining, Falling, Mining, Falling]. What game is this?"
+   - LLM returns name (e.g., "Spleef")
+   - Store Macro-Concept in concepts table with pattern signature
 
-**Circuit Breaker:**
-```javascript
-// nodeDB/utils/circuit_breaker.js
-class CircuitBreaker {
-  constructor(threshold = 5, timeout = 60000) {
-    this.failureThreshold = threshold;
-    this.timeout = timeout;
-    this.failures = 0;
-    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
-    this.nextAttempt = 0;
-  }
-  
-  async call(fn) {
-    if (this.state === 'OPEN') {
-      if (Date.now() < this.nextAttempt) {
-        throw new Error('Circuit breaker is OPEN');
-      }
-      this.state = 'HALF_OPEN';
-    }
-    
-    try {
-      const result = await fn();
-      this.onSuccess();
-      return result;
-    } catch (err) {
-      this.onFailure();
-      throw err;
-    }
-  }
-  
-  onSuccess() {
-    this.failures = 0;
-    this.state = 'CLOSED';
-  }
-  
-  onFailure() {
-    this.failures++;
-    
-    if (this.failures >= this.failureThreshold) {
-      this.state = 'OPEN';
-      this.nextAttempt = Date.now() + this.timeout;
-      logger.warn('[CircuitBreaker] Circuit opened, cooling down');
-    }
-  }
-}
+4. **Add Macro-Concept recognition**
+   - When same pattern appears again, match against known Macro-Concepts
+   - Tag episode with macro_concept_id
+   - Include in LLM context: "You're playing Spleef with Steve"
+   - Villager responses reflect understanding of game
 
-const llmCircuitBreaker = new CircuitBreaker();
-module.exports = { llmCircuitBreaker };
-```
-
-**Comprehensive Error Logging:**
-```javascript
-// scripts/utils/error_handler.js
-function handleLayerError(layerName, error, context) {
-  const errorData = {
-    layer: layerName,
-    message: error.message,
-    stack: error.stack,
-    context: {
-      villagerID: context.villagerID,
-      timestamp: Date.now(),
-      ...context
-    }
-  };
-  
-  console.error(`[Error] [${layerName}] ${error.message}`, JSON.stringify(errorData));
-  
-  // Send to backend for aggregation
-  http.post('http://localhost:3000/api/errors/log', {
-    body: JSON.stringify(errorData)
-  }).catch(() => {
-    // Silent fail if backend unreachable
-  });
-}
-```
-
-**Validation:**
-- Stop PostgreSQL → Health monitor detects within 30 seconds
-- LLM fails 5 times → Circuit breaker opens
-- Errors logged with full context for debugging
+5. **Test Macro-Concept detection**
+   - Play Spleef with villager watching (mine, fall, repeat 3x)
+   - Verify Layer 3 detects repeating pattern
+   - Wait for LLM to name it "Spleef"
+   - Play again and verify villager recognizes game
+   - Test with different patterns (Tag, Race, Building Contest)
 
 ---
 
-## Feature 6: Production Monitoring
+## Feature 5: Gossip System (Knowledge Sharing)
 
-**Goal:** Real-time metrics and alerting for operators
+**Deliverable:** Villagers can share learned concepts and memories with each other.
 
-### Steps:
-1. Create monitoring dashboard endpoint: `/api/metrics/dashboard`
-2. Track key metrics: Active villagers, LLM queue size, database connections
-3. Add alerting thresholds: Queue >15, DB connections >18, tick time >10ms
-4. Implement metrics export: Prometheus format for external monitoring
-5. Create operator notification system (optional: Discord webhook)
+### Steps
 
-**Files Created:**
-- `nodeDB/routes/metrics.js`
-- `nodeDB/utils/prometheus_exporter.js`
+1. **Add gossip table to database schema**
+   - CREATE TABLE gossip (gossip_id, speaker_id, listener_id, concept_id, timestamp)
+   - Create indexes on speaker_id and listener_id
+   - Add foreign key to concepts table
+   - Migrate existing database
 
-**Metrics Dashboard:**
-```javascript
-// nodeDB/routes/metrics.js
-router.get('/dashboard', (req, res) => {
-  const metrics = {
-    villagers: {
-      active: getActiveVillagerCount(),
-      withMemories: getVillagersWithMemories()
-    },
-    brain: {
-      queueSize: brainScheduler.queue.length,
-      pendingIntents: brainScheduler.pendingIntents.size,
-      avgProcessingTime: getAvgLLMProcessingTime()
-    },
-    database: {
-      activeConnections: pool.totalCount - pool.idleCount,
-      totalConnections: pool.totalCount,
-      queuedRequests: pool.waitingCount
-    },
-    performance: {
-      avgTickTime: getAvgTickTime(),
-      maxTickTime: getMaxTickTime(),
-      episodesPerSecond: getEpisodesPerSecond()
-    },
-    health: healthMonitor.getStatus()
-  };
-  
-  res.json({ status: 'success', metrics });
-});
-```
+2. **Create gossip endpoints (`nodeDB/routes/memory.js`)**
+   - POST /api/memory/gossip/share: Speaker shares concept with listener
+   - GET /api/memory/gossip/received?villagerID=X: Fetch gossip heard by villager
+   - Include gossip in LLM context ("You heard from Bob: 'Steve plays Spleef'")
+   - Validate both villagers exist and are within chat range
 
-**Alerting System:**
-```javascript
-// nodeDB/utils/alerting.js
-class AlertManager {
-  constructor() {
-    this.thresholds = {
-      queueSize: 15,
-      dbConnections: 18,
-      tickTime: 10
-    };
-    
-    this.lastAlerts = new Map();
-    this.cooldown = 300000; // 5 minutes
-  }
-  
-  checkThresholds(metrics) {
-    if (metrics.brain.queueSize > this.thresholds.queueSize) {
-      this.sendAlert('queue_overload', `LLM queue size: ${metrics.brain.queueSize}`);
-    }
-    
-    if (metrics.database.activeConnections > this.thresholds.dbConnections) {
-      this.sendAlert('db_exhaustion', `DB connections: ${metrics.database.activeConnections}`);
-    }
-    
-    if (metrics.performance.avgTickTime > this.thresholds.tickTime) {
-      this.sendAlert('performance_degradation', `Avg tick time: ${metrics.performance.avgTickTime}ms`);
-    }
-  }
-  
-  sendAlert(alertType, message) {
-    const lastAlert = this.lastAlerts.get(alertType) || 0;
-    const now = Date.now();
-    
-    if (now - lastAlert < this.cooldown) return; // Cooldown
-    
-    this.lastAlerts.set(alertType, now);
-    
-    logger.error({ alertType, message }, '[Alert] Threshold exceeded');
-    
-    // Optional: Send to Discord webhook
-    if (process.env.DISCORD_WEBHOOK_URL) {
-      axios.post(process.env.DISCORD_WEBHOOK_URL, {
-        content: `🚨 **Alert**: ${alertType}\n${message}`
-      }).catch(() => {});
-    }
-  }
-}
+3. **Add autonomous gossip triggers**
+   - When villager learns new concept, 30% chance to gossip to nearby villagers
+   - Find villagers within 10-block radius
+   - Send HTTP POST to share concept with each
+   - Write gossip records to database
 
-const alertManager = new AlertManager();
-module.exports = alertManager;
-```
+4. **Implement gossip in LLM prompts**
+   - Fetch gossip received by villager from database
+   - Add section in prompt: "You heard from others: [gossip summaries]"
+   - Villager can reference gossip in responses
+   - Example: "I heard Bob mention you're good at building!"
 
-**Prometheus Metrics Export:**
-```javascript
-// nodeDB/utils/prometheus_exporter.js
-router.get('/prometheus', (req, res) => {
-  const metrics = `
-# HELP villager_active_count Number of active villagers
-# TYPE villager_active_count gauge
-villager_active_count ${getActiveVillagerCount()}
-
-# HELP brain_queue_size LLM request queue size
-# TYPE brain_queue_size gauge
-brain_queue_size ${brainScheduler.queue.length}
-
-# HELP db_connections_active Active database connections
-# TYPE db_connections_active gauge
-db_connections_active ${pool.totalCount - pool.idleCount}
-
-# HELP performance_tick_time_ms Average tick time in milliseconds
-# TYPE performance_tick_time_ms gauge
-performance_tick_time_ms ${getAvgTickTime()}
-`;
-  
-  res.set('Content-Type', 'text/plain');
-  res.send(metrics.trim());
-});
-```
-
-**Validation:**
-- Access `/api/metrics/dashboard` → Shows real-time metrics
-- Queue size exceeds 15 → Alert triggered (logged/Discord)
-- Prometheus scraper can ingest `/api/metrics/prometheus`
+5. **Test gossip propagation**
+   - Teach concept to Villager A (play Spleef near A)
+   - Wait for A to gossip to nearby Villager B
+   - Trigger event near B (start playing Spleef)
+   - Verify B recognizes game despite never witnessing it before
 
 ---
 
-## Feature 7: Comprehensive Documentation
+## Feature 6: Multi-Turn Conversations
 
-**Goal:** Complete guides for deployment and maintenance
+**Deliverable:** Villagers remember recent chat context for coherent dialogue.
 
-### Steps:
-1. Create deployment guide: Step-by-step production setup
-2. Write operator manual: Common tasks, troubleshooting, monitoring
-3. Document API endpoints: OpenAPI/Swagger specification
-4. Create architecture diagrams: Layer flows, data models
-5. Write performance tuning guide: Optimization tips for different server sizes
+### Steps
 
-**Files Created:**
-- `_docs/deployment-guide.md`
-- `_docs/operator-manual.md`
-- `_docs/api-reference.md`
-- `_docs/performance-tuning.md`
+1. **Add conversation tracking to Working Memory**
+   - Store last 3 whispers in DynamicProperty (wm_recent_chat)
+   - Include speaker ID, message text, timestamp
+   - Serialize as JSON string (limit to 1KB)
+   - Clear after 5 minutes of inactivity
 
-**Deployment Guide Outline:**
-```markdown
-# Deployment Guide
+2. **Include conversation history in LLM prompts**
+   - Fetch wm_recent_chat from DynamicProperties
+   - Add section in prompt: "Recent conversation: [chat history]"
+   - LLM maintains context across turns
+   - Example: Player asks "What do you think?" → Villager references previous topic
 
-## Prerequisites
-- Ubuntu 22.04 LTS (or equivalent)
-- PostgreSQL 15+
-- Node.js 18+
-- llama.cpp compiled
-- Minecraft Bedrock Dedicated Server 1.26+
+3. **Implement chat threading**
+   - Track conversation_id for related whispers
+   - Store in conversations table in PostgreSQL
+   - Link episodes to conversation_id if chat-triggered
+   - Query conversations when building LLM prompt
 
-## Step 1: Database Setup
-- Install PostgreSQL
-- Create database and user
-- Apply schema.sql
-- Configure connection pooling
+4. **Add conversation timeout**
+   - If 5 minutes pass with no whispers, clear wm_recent_chat
+   - Start new conversation_id on next whisper
+   - Log conversation boundaries if DEBUG_MODE enabled
+   - Prevent memory bloat from stale conversations
 
-## Step 2: Backend Setup
-- Install Node.js dependencies
-- Configure .env file
-- Start Express server
-- Verify health check
-
-## Step 3: LLM Setup
-- Download quantized model
-- Start llama.cpp server
-- Test inference
-- Configure auto-restart
-
-## Step 4: Behavior Pack Deployment
-- Copy files to BDS
-- Enable in server properties
-- Restart BDS
-- Test HTTP connectivity
-
-## Step 5: Monitoring Setup
-- Configure Prometheus scraping
-- Set up alerting (Discord/email)
-- Test health checks
-- Monitor logs
-
-## Troubleshooting
-- Common issues and solutions
-- Log locations
-- Debug mode usage
-```
-
-**Operator Manual Outline:**
-```markdown
-# Operator Manual
-
-## Daily Operations
-- Checking system health
-- Monitoring villager count
-- Reviewing logs
-
-## Maintenance Tasks
-- Database backups
-- Log rotation
-- Performance tuning
-
-## Troubleshooting
-- Villagers not responding
-- LLM timeouts
-- Database connection issues
-- High memory usage
-
-## Advanced Operations
-- Scaling to 50+ villagers
-- Migrating to faster LLM
-- Database optimization
-- Custom vector rules
-```
-
-**Validation:**
-- Documentation complete and tested
-- All commands verified on fresh install
-- Troubleshooting section covers common issues
+5. **Test multi-turn dialogue**
+   - Whisper: "Do you like diamonds?"
+   - Wait for response
+   - Whisper: "Why do you like them?"
+   - Verify villager's second response references first question
 
 ---
 
-## Feature 8: Advanced LLM Prompting
+## Feature 7: Instinct Fallback System
 
-**Goal:** Optimize prompts for better villager behavior
+**Deliverable:** Hardcoded fallback behaviors when backend/LLM is unavailable.
 
-### Steps:
-1. Add few-shot examples to prompts: Include sample inputs/outputs
-2. Implement chain-of-thought prompting: Ask LLM to explain reasoning
-3. Add constraint enforcement: Strict JSON format validation
-4. Create prompt templates library: Different templates for different scenarios
-5. Implement dynamic prompt adjustment based on context complexity
+### Steps
 
-**Files Modified:**
-- `nodeDB/brain/prompt_builder.js`
+1. **Create instinct module (`scripts/layers/layer8_instinct.js`)**
+   - Define hardcoded behavior rules based on Working Memory
+   - High trust + low intensity → friendly idle
+   - Low trust + high intensity → flee or defensive
+   - Shock state → flee immediately
+   - No focus → wander randomly
 
-**Enhanced Prompt with Few-Shot:**
-```javascript
-function buildEnhancedPrompt(villagerContext) {
-  return `You are an intelligent villager in Minecraft. You observe players and form relationships based on their actions.
+2. **Implement fallback triggers**
+   - In Layer 7, track consecutive polling failures
+   - After 3 failures (6 seconds), switch to instinct mode
+   - Set wm_usingInstinct flag to true
+   - Continue checking backend every 60 seconds
 
-## Example Interactions
+3. **Add instinct action selection**
+   - getInstinctAction(villagerEntity, workingMemory, relationshipScore)
+   - Use simple if/else rules (no LLM needed)
+   - Return IntentPacket with basic action
+   - Log instinct activation if DEBUG_MODE enabled
 
-Input: Player placed 5 diamond blocks near you. Trust score: 0.8
-Output: {
-  "action": "speak",
-  "speechText": "Wow, those are beautiful diamonds! Are you building something special?",
-  "internalMonologue": "This player trusts me with valuable blocks. They seem friendly and generous."
-}
+4. **Implement instinct recovery**
+   - When backend comes back online, clear wm_usingInstinct flag
+   - Resume normal LLM-driven behavior
+   - Log recovery event
+   - Smoothly transition (finish current instinct action first)
 
-Input: Player broke your bed. Trust score: 0.2
-Output: {
-  "action": "speak",
-  "speechText": "Hey! That was my bed! Why would you do that?",
-  "internalMonologue": "I don't trust this player. They're destructive and disrespectful."
-}
-
-## Your Current Situation
-
-Recent Activity:
-${formatEpisodes(villagerContext.recentEpisodes)}
-
-Gossip You've Heard:
-${formatGossip(villagerContext.gossip)}
-
-Your Relationship with Player ${villagerContext.actorID}:
-- Trust Score: ${villagerContext.relationshipScore.toFixed(2)}
-- Total Interactions: ${villagerContext.interactionCount}
-
-Your Personality Traits:
-- ${villagerContext.identityTags.join(', ')}
-
-## Your Response
-
-Based on the above context, generate a JSON response with your action and thoughts.
-
-IMPORTANT: 
-- Only speak if the situation warrants a comment
-- Choose "idle" if nothing interesting is happening
-- Be consistent with your personality traits
-- Consider your trust score when responding
-
-JSON Response:`;
-}
-```
-
-**Validation:**
-- LLM generates more contextually appropriate responses
-- JSON format compliance improves to >95%
-- Villagers exhibit consistent personalities
+5. **Test instinct fallback**
+   - Stop backend server during gameplay
+   - Verify villagers switch to instinct after 6 seconds
+   - Observe fallback behaviors (flee, idle, etc.)
+   - Restart backend and verify recovery
 
 ---
 
-## Feature 9: Performance Stress Testing
+## Feature 8: Performance Optimizations
 
-**Goal:** Validate system performance under load
+**Deliverable:** System maintains 20 TPS with 20+ active villagers.
 
-### Steps:
-1. Create stress test script: Simulate 20+ villagers simultaneously
-2. Measure key metrics: Tick time, LLM throughput, database load
-3. Identify bottlenecks: Profile hot paths in code
-4. Optimize based on findings: Apply targeted improvements
-5. Document performance benchmarks: Create baseline metrics
+### Steps
 
-**Files Created:**
-- `_tests/stress_test.js`
-- `_docs/performance-benchmarks.md`
+1. **Optimize Layer 1 event filtering**
+   - Cache villager positions for 5 ticks (reduce getEntities calls)
+   - Use spatial partitioning (chunk-based villager lookup)
+   - Skip LOS checks for distant events (proximity > 20 blocks)
+   - Batch process events (handle all events in single tick)
 
-**Stress Test Script:**
-```javascript
-// _tests/stress_test.js
-const axios = require('axios');
+2. **Optimize PostgreSQL queries**
+   - Add database indexes on frequently queried columns
+   - Use prepared statements for all queries (pg-pool caching)
+   - Batch relationship updates (1 UPDATE per 5 episodes)
+   - Use connection pooling efficiently (release immediately)
 
-async function simulateVillager(villagerID, duration) {
-  const startTime = Date.now();
-  let episodeCount = 0;
-  
-  while (Date.now() - startTime < duration) {
-    // Simulate episode write
-    await axios.post('http://localhost:3000/api/memory/episode', {
-      villagerID,
-      actorID: 'test-player',
-      episodeSummary: {
-        vectorAverage: {
-          C: Math.random() * 2 - 1,
-          V: Math.random() * 2 - 1,
-          I: Math.random() * 2 - 1,
-          S: Math.random() * 2 - 1,
-          X: Math.random() * 2 - 1
-        },
-        duration: 5000,
-        eventCount: 3,
-        timestamp: Date.now()
-      }
-    });
-    
-    episodeCount++;
-    
-    // Simulate LLM request
-    await axios.post('http://localhost:3000/api/brain/request', {
-      villagerID,
-      actorID: 'test-player',
-      trigger: 'episode_complete',
-      priority: 'medium'
-    });
-    
-    await new Promise(resolve => setTimeout(resolve, 2000));
-  }
-  
-  console.log(`Villager ${villagerID}: ${episodeCount} episodes in ${duration}ms`);
-}
+3. **Optimize Brain Scheduler**
+   - Add request deduplication (ignore duplicate requests within 5s)
+   - Limit queue size to 50 requests (drop low-priority if exceeded)
+   - Prune stale requests (older than 30s) from queue
+   - Track queue metrics (average wait time, throughput)
 
-async function runStressTest() {
-  const villagerCount = 20;
-  const testDuration = 60000; // 1 minute
-  
-  console.log(`Starting stress test: ${villagerCount} villagers for ${testDuration}ms`);
-  
-  const villagers = Array.from({ length: villagerCount }, (_, i) => 
-    simulateVillager(`stress-test-v${i}`, testDuration)
-  );
-  
-  await Promise.all(villagers);
-  
-  // Fetch metrics
-  const metrics = await axios.get('http://localhost:3000/api/metrics/dashboard');
-  console.log('Final metrics:', metrics.data);
-}
+4. **Add performance monitoring**
+   - Track tick time for Fast Gear (target <5ms)
+   - Track HTTP request latency (target <100ms for Layer 5)
+   - Track LLM inference time (target <5s)
+   - Log performance metrics to Pino
 
-runStressTest();
-```
-
-**Performance Benchmarks Document:**
-```markdown
-# Performance Benchmarks
-
-## Test Environment
-- Hardware: [CPU, RAM, Storage specs]
-- Software: BDS 1.26, Node.js 18, PostgreSQL 15
-- LLM: llama.cpp with Llama 3 7B Q4_K_M
-
-## 20 Villagers (Target Configuration)
-- Avg Tick Time: 4.2ms (target: <5ms) ✅
-- LLM Throughput: 18 req/min (target: >15) ✅
-- Database Write Latency: 42ms avg (target: <100ms) ✅
-- Memory Usage: 6.2GB (4.5GB base + 1.7GB villagers)
-
-## 50 Villagers (Stress Test)
-- Avg Tick Time: 9.8ms (degraded performance)
-- LLM Queue Size: 35 (overloaded)
-- Database Write Latency: 125ms avg
-- Recommendation: Limit to 30 villagers without optimization
-
-## Bottlenecks Identified
-1. LLM inference speed (1-3s per villager)
-2. Episode vectorization (Layer 2) at scale
-3. Pathfinding calculations
-```
-
-**Validation:**
-- System handles 20 villagers with <5ms tick time
-- All services remain responsive under load
-- No memory leaks after 1-hour test
+5. **Load test with multiple villagers**
+   - Spawn 20 villagers in close proximity
+   - Trigger events that all villagers observe
+   - Monitor server TPS (should stay at 20)
+   - Check backend CPU and memory usage
 
 ---
 
-## Feature 10: Final Polish & Bug Fixes
+## Feature 9: Comprehensive Error Handling
 
-**Goal:** Address edge cases and improve UX
+**Deliverable:** Production-ready error handling with monitoring and recovery.
 
-### Steps:
-1. Fix UI navigation bugs: Ensure all menus can be exited
-2. Add input validation: Sanitize all player-provided text
-3. Improve error messages: User-friendly messages instead of technical errors
-4. Add loading states: Show "Processing..." while waiting for LLM
-5. Final QA pass: Test all features end-to-end
+### Steps
 
-**QA Checklist:**
-- [ ] All menu navigation flows work correctly
-- [ ] Speech bubbles display special characters correctly
-- [ ] Gossip system handles long text (>200 chars)
-- [ ] Pathfinding doesn't get stuck in corners
-- [ ] Identity tags update correctly over time
-- [ ] Debug menu only accessible to operators
-- [ ] Rate limiting prevents spam
-- [ ] Instinct fallback activates when appropriate
-- [ ] Working Memory persists across restarts
-- [ ] Database backups can be restored successfully
+1. **Add error monitoring to backend**
+   - Track failed database queries (count, error types)
+   - Track failed LLM calls (timeout, malformed response)
+   - Track HTTP request errors (timeout, connection refused)
+   - Log all errors with context to Pino
+
+2. **Implement automatic recovery**
+   - Retry failed database queries (max 3 attempts)
+   - Retry failed HTTP requests (exponential backoff)
+   - Restart llama.cpp if health check fails
+   - Alert admins via in-game message for critical failures
+
+3. **Add graceful degradation paths**
+   - Backend offline → Use Working Memory only (DynamicProperties)
+   - LLM offline → Use instinct fallback
+   - PostgreSQL offline → Queue writes in memory, flush when reconnected
+   - Network timeout → Skip operation, log error, continue
+
+4. **Create error logging dashboard**
+   - GET /api/debug/errors returns recent error log
+   - Display in Debug Dashboard UI
+   - Show error count by type (network, database, LLM)
+   - Add "Clear Errors" button
+
+5. **Test error scenarios**
+   - Stop PostgreSQL mid-game and verify graceful degradation
+   - Stop llama.cpp and verify instinct fallback
+   - Simulate network timeout and verify recovery
+   - Check error logs in Debug Dashboard
+
+---
+
+## Feature 10: Advanced Debug Dashboard Features
+
+**Deliverable:** Full CRUD operations on villager data with live monitoring.
+
+### Steps
+
+1. **Add live vector stream (`scripts/ui/debug.js`)**
+   - Display real-time vectors from Layer 2 (last 10)
+   - Auto-refresh every 2 seconds
+   - Show raw event name, vector values, timestamp
+   - Add manual refresh button
+
+2. **Add episode management**
+   - View Full Episode Log: Paginated list of last 50 episodes
+   - Seal Episode Now: Force Layer 3 to seal current episode
+   - Delete Episode: Remove episode from PostgreSQL by ID
+   - Export Episodes: Download as JSON file (via backend)
+
+3. **Add relationship editor**
+   - Modal input to manually set trust score (-1 to 1)
+   - Modal input to set interaction count
+   - Save changes to PostgreSQL via POST /api/debug/edit-relationship
+   - Refresh menu to show updated values
+
+4. **Add concept browser**
+   - View all known concepts in database
+   - Show concept name, vector signature, discovery count
+   - Add "Teach Concept" button to inject new concept manually
+   - Delete concept (removes from database)
+
+5. **Test debug dashboard**
+   - Open debug dashboard and navigate all sub-menus
+   - Edit relationship score and verify persistence
+   - Force seal episode and check PostgreSQL
+   - View live vector stream and verify auto-refresh
+
+---
+
+## Feature 11: Macro-Pattern Recognition (Tier B Full)
+
+**Deliverable:** Villagers recognize complex repeating activities like Spleef, Tag, Racing.
+
+### Steps
+
+1. **Enhance Tier B buffer in Layer 3**
+   - Increase buffer size to 20 Sub-Concepts (10-minute window)
+   - Add pattern detection every time new Sub-Concept is added
+   - Use sliding window algorithm to find repeating sequences
+   - Detect minimum 3 repetitions to confirm pattern
+
+2. **Implement pattern signature matching**
+   - Calculate signature hash for detected pattern (e.g., ["Mining", "Falling"])
+   - Check macro_patterns table in PostgreSQL for matching signature
+   - If match found, tag episode with macro_concept_id
+   - If no match, queue LLM labeling request
+
+3. **Add LLM macro labeling**
+   - Build prompt: "The following sequence repeated 3 times: [pattern]. What activity is this?"
+   - Include example context (player names, locations)
+   - LLM returns name (e.g., "Spleef", "Parkour", "Hide and Seek")
+   - Store in macro_patterns table with signature
+
+4. **Include Macro-Concepts in LLM prompts**
+   - When building prompt, check if current episode has macro_concept_id
+   - Add context: "You are playing [Spleef] with Steve"
+   - LLM responses reference game name and rules
+   - Villagers make game-specific comments
+
+5. **Test Macro-Concept detection**
+   - Play Spleef (mine, fall, repeat 3x) with villager watching
+   - Verify pattern detection triggers
+   - Wait for LLM to name it "Spleef"
+   - Play again and verify villager says "Oh, Spleef again!"
+
+---
+
+## Feature 12: Production Polish & Monitoring
+
+**Deliverable:** Production-ready system with comprehensive logging and monitoring.
+
+### Steps
+
+1. **Add health monitoring endpoints**
+   - GET /api/health/database: Check PostgreSQL connection and query latency
+   - GET /api/health/llm: Check llama.cpp status and queue length
+   - GET /api/health/metrics: Return performance stats (avg latency, throughput)
+   - Create health check dashboard (optional web UI)
+
+2. **Implement log rotation**
+   - Configure pino-rotating-file-stream (10MB files, daily rotation)
+   - Compress old logs (gzip)
+   - Retain logs for 7 days, then delete
+   - Test log rotation with high-volume logging
+
+3. **Add admin notifications**
+   - When critical error occurs, send in-game message to admins
+   - Use world.sendMessage() with admin tag filter
+   - Include error type and timestamp
+   - Add "View Details" link to Debug Dashboard
+
+4. **Create startup checklist**
+   - On backend startup, verify PostgreSQL connection
+   - Verify llama.cpp is reachable
+   - Load cached concepts from database
+   - Log startup status with all component health
+
+5. **Test production readiness**
+   - Run system for 1 hour with 10+ villagers
+   - Monitor TPS (should stay at 20)
+   - Check logs for errors or warnings
+   - Verify memory usage is stable (no leaks)
+
+---
+
+## Testing Checklist
+
+- [ ] Interaction Hub opens on villager interaction
+- [ ] Hub displays accurate trust score and mood
+- [ ] Gossip menu loads recent memories correctly
+- [ ] Whisper input sends text to backend and receives response
+- [ ] Debug Dashboard shows Working Memory and episode state
+- [ ] Live vector stream updates in real-time
+- [ ] CRUD operations work (clear memory, edit relationships)
+- [ ] Tier B detects repeating patterns (3+ repetitions)
+- [ ] LLM labels Macro-Concepts correctly (Spleef, Tag, etc.)
+- [ ] Villagers recognize Macro-Concepts in future episodes
+- [ ] Gossip system shares concepts between villagers
+- [ ] Multi-turn conversations maintain context
+- [ ] Instinct fallback activates when backend offline
+- [ ] Performance stays at 20 TPS with 20+ villagers
+- [ ] Error logs are comprehensive and actionable
+- [ ] System recovers automatically from transient failures
+- [ ] Admin notifications work for critical errors
+
+---
+
+## Known Limitations at End of Phase 3
+
+- No teaching system (players can't directly teach concepts via UI)
+- No villager-to-villager direct conversations (only gossip sharing)
+- No advanced animations (only default villager animations)
+- No custom entity models (uses vanilla villager_v2)
+- No web dashboard for monitoring (console logs only)
+- No A/B testing for LLM prompt variations
+- No distributed LLM (single llama.cpp instance)
+
+---
+
+## File Structure After Phase 3
+
+```
+Immersive_Villagers BP/
+├── scripts/
+│   ├── layers/
+│   │   ├── layer1_sensory.js
+│   │   ├── layer2_vectorizer.js
+│   │   ├── layer3_sequencer.js              # Enhanced with Tier B
+│   │   ├── layer4_working_memory.js
+│   │   ├── layer7_action_layer.js
+│   │   └── layer8_instinct.js               # NEW: Fallback behaviors
+│   ├── ui/
+│   │   ├── hub.js                           # NEW: Main menu
+│   │   ├── gossip.js                        # NEW: Gossip & Whisper
+│   │   ├── debug.js                         # NEW: Debug Dashboard
+│   │   ├── helpers.js                       # NEW: UI helper functions
+│   │   ├── state.js                         # NEW: Breadcrumb management
+│   │   ├── feedback.js                      # NEW: Async feedback handlers
+│   │   └── validation.js                    # NEW: Input sanitization
+│   ├── events/
+│   │   ├── player_events.js
+│   │   ├── entity_events.js
+│   │   └── chat_events.js
+│   ├── config/
+│   │   ├── constants.js
+│   │   ├── vector_rules.js
+│   │   └── dynamic_properties_schema.js
+│   ├── utils/
+│   │   ├── vector_math.js
+│   │   ├── entity_helpers.js
+│   │   ├── time_helpers.js
+│   │   ├── debug_logger.js
+│   │   ├── network_helpers.js
+│   │   └── dynamic_properties_helpers.js
+│   └── main.js
+│
+├── nodeDB/
+│   ├── db/
+│   │   ├── pool.js
+│   │   ├── schema.sql                       # Enhanced with gossip & macro_patterns tables
+│   │   └── migrations/
+│   │       └── 002_add_gossip_macro.sql     # NEW: Schema migration
+│   ├── queries/
+│   │   ├── episodes.js
+│   │   ├── relationships.js
+│   │   ├── identity.js
+│   │   ├── working_memory.js
+│   │   ├── concepts.js
+│   │   ├── gossip.js                        # NEW: Gossip queries
+│   │   └── macro_patterns.js                # NEW: Macro-Concept queries
+│   ├── routes/
+│   │   ├── memory.js                        # Enhanced with gossip endpoints
+│   │   ├── brain.js                         # Enhanced with macro labeling
+│   │   └── debug.js                         # Enhanced with CRUD endpoints
+│   ├── brain/
+│   │   ├── scheduler.js                     # Final version with batching
+│   │   ├── llm_client.js
+│   │   ├── prompt_builder.js                # Final version with full context
+│   │   └── response_parser.js
+│   ├── middleware/
+│   │   ├── validate.js
+│   │   ├── logger.js
+│   │   └── error.js
+│   ├── utils/
+│   │   ├── logger.js
+│   │   └── health_check.js                  # NEW: Component health checks
+│   ├── app.js
+│   ├── server.js
+│   ├── package.json
+│   └── .env
+│
+└── _docs/
+    └── phases/
+        ├── phase0-setup.md
+        ├── phase1-mvp.md
+        ├── phase2-enhancement.md
+        └── phase3-polish.md                 # THIS FILE
+```
+
+---
+
+## Example Scenario (Complete System Demo)
+
+### Setup
+- Villager "Barrel" (personality: loves_building, is_social, values_diamonds)
+- Villager "Grumpy" (personality: is_cautious, dislikes_noise)
+- Player "Steve" (trust with Barrel: 0.85, trust with Grumpy: 0.3)
+- Both villagers within 15 blocks of each other
+
+### Interaction Flow
+
+1. **Steve opens Interaction Hub with Barrel**
+   - Menu shows: "Hello, Steve! I'm in a good mood today."
+   - Trust score displayed: 0.85
+   - Recent memories shown: "Built diamond house (2 hours ago)"
+
+2. **Steve sends whisper: "Want to play Spleef?"**
+   - Gossip menu shows loading: "Barrel is thinking..."
+   - Backend processes whisper (vectorized as social, high complexity)
+   - LLM generates response: "I heard about Spleef from Bob! Let's play!"
+
+3. **Steve and Barrel play Spleef (mine, fall, repeat)**
+   - Layer 3 (Tier B) detects repeating pattern after 3 cycles
+   - Pattern ["Mining", "Falling"] → LLM labels as "Spleef"
+   - Barrel stores Macro-Concept and gossips to Grumpy
+
+4. **Grumpy receives gossip (autonomous)**
+   - Barrel shares concept: "Steve plays Spleef"
+   - Grumpy stores gossip in database (hasn't witnessed Spleef yet)
+   - Next time Steve plays near Grumpy, Grumpy recognizes game
+
+5. **Steve wins Spleef**
+   - High positive S vector (friendly competition)
+   - Trust score increases (0.85 → 0.88)
+   - Barrel: "Great game! You're getting better at this!"
+
+6. **Steve opens Debug Dashboard (admin only)**
+   - Views live vector stream (last 10 vectors from Spleef)
+   - Checks Tier B buffer (shows ["Mining", "Falling", "Mining", "Falling", "Chatting"])
+   - Forces new LLM request manually
+   - Verifies Macro-Concept "Spleef" is stored
+
+7. **Backend goes offline temporarily**
+   - Villagers switch to instinct mode after 6 seconds
+   - Barrel continues friendly idle behavior (high trust)
+   - Grumpy becomes defensive (low trust)
+   - Backend recovers, villagers resume LLM-driven behavior
+
+---
+
+## Performance Targets
+
+| Feature | Target Latency | Notes |
+|---------|---------------|-------|
+| UI menu open | 50-100ms | Fetch data from backend |
+| Whisper processing | 2-5s | Includes LLM inference |
+| Gossip propagation | 100-200ms | HTTP POST to share concept |
+| Macro-pattern detection | <10ms | Tier B pattern matching |
+| Debug Dashboard load | 100-200ms | Fetch WM + episode data |
+| Instinct fallback activation | 6s | After 3 failed polls |
+| Error recovery | 60s | Retry interval for offline components |
+| **System Load (20 villagers)** | **<10% tick budget** ✅ | Maintains 20 TPS |
 
 ---
 
 ## Production Readiness Checklist
 
-**Infrastructure:**
-- [ ] PostgreSQL configured with optimized settings
-- [ ] Connection pooling limits set appropriately
-- [ ] llama.cpp runs as systemd service with auto-restart
-- [ ] Backend runs as systemd service with auto-restart
-- [ ] Logs rotate automatically (logrotate configured)
-- [ ] Backups scheduled (daily database dumps)
-
-**Security:**
-- [ ] .env file has secure passwords
-- [ ] Database user has minimal required permissions
-- [ ] HTTP endpoints are not publicly exposed
-- [ ] Input validation on all user-provided data
-- [ ] Rate limiting enabled on all endpoints
-
-**Monitoring:**
-- [ ] Prometheus scraping configured
-- [ ] Alerting thresholds set
-- [ ] Discord webhook connected (optional)
-- [ ] Health checks passing
-- [ ] Metrics dashboard accessible
-
-**Documentation:**
-- [ ] Deployment guide complete
-- [ ] Operator manual written
-- [ ] API reference documented
-- [ ] Architecture diagrams created
-- [ ] Performance tuning guide finalized
+- [ ] All UI menus work correctly with no crashes
+- [ ] Whisper input is sanitized and validated
+- [ ] Gossip system propagates knowledge correctly
+- [ ] Macro-Concepts are detected and labeled accurately
+- [ ] Multi-turn conversations maintain context
+- [ ] Debug Dashboard provides full CRUD functionality
+- [ ] Instinct fallback activates when needed
+- [ ] System recovers from all transient failures
+- [ ] Performance optimizations maintain 20 TPS
+- [ ] Error logs are comprehensive and actionable
+- [ ] Admin notifications work for critical errors
+- [ ] Documentation is complete and up-to-date
+- [ ] Code is fully commented with JSDoc
+- [ ] No known bugs or memory leaks
+- [ ] Load tested with 20+ villagers successfully
 
 ---
 
-## Performance Targets (Phase 3)
+## Estimated Complexity
 
-| Metric | Target | Achieved |
-|--------|--------|----------|
-| Max Active Villagers | 20+ | To be measured |
-| Avg Tick Time (20 villagers) | <5ms | To be measured |
-| LLM Queue Processing | 20 req/min | To be measured |
-| Database Write Latency | <100ms | To be measured |
-| Memory Usage (20 villagers) | <7GB | To be measured |
-| Uptime | 99%+ | To be measured |
-
----
-
-## Known Limitations (Post-Phase 3)
-
-**Future Enhancements (Post-MVP):**
-- Machine learning for vector rule optimization
-- Voice synthesis for villager speech
-- Multi-language support
-- Cloud-based LLM fallback
-- Villager relationship graphs
-- Advanced economy simulation
+**Time Investment:** Substantial (full feature polish)  
+**Technical Difficulty:** High (UI integration, pattern recognition, error handling)  
+**Dependencies:** Phase 2 complete, stable system performance  
+**Risk Level:** Low (builds on proven foundation)
 
 ---
 
 **Document Type:** Phase Plan  
-**Phase:** 3 (Polish & Optimization)  
+**Phase:** 3 (Polish)  
 **Status:** Ready for Implementation  
-**Last Updated:** Feb 23, 2026
+**Version:** 1.0  
+**Last Updated:** Feb 24, 2026

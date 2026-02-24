@@ -1,387 +1,445 @@
-# 📋 Development Phases — Immersive Villager AI
+# 📊 Phases Overview — Immersive Villager AI
 
-**Project:** Immersive Villager AI for Minecraft Bedrock Edition  
-**Architecture:** 7-Layer Cognitive System  
-**Last Updated:** Feb 23, 2026
+## Purpose
 
----
-
-## Overview
-
-This directory contains the complete iterative development plan for the Immersive Villager AI project. Each phase builds progressively toward a production-ready system with intelligent, subjective villager agents.
+This document provides a **high-level roadmap** of the iterative development phases for the Immersive Villager AI project, from barebones infrastructure to a polished, production-ready system.
 
 ---
 
-## Development Roadmap
+## Phase Strategy
 
-### Phase 0: Setup (Foundation)
-**Status:** Not Started  
-**Duration:** 2-3 sessions  
-**Document:** `phase0-setup.md`
+Each phase builds on the previous one, delivering a progressively more capable and feature-rich system:
 
-**Goal:** Establish barebones infrastructure
-
-**Key Deliverables:**
-- PostgreSQL database operational with schema
-- Node.js backend responding to health checks
-- llama.cpp server running and responding
-- Script API can send HTTP requests to backend
-- Basic logging operational
-
-**Success Criteria:**
-- All services running without errors
-- HTTP communication verified between Script API and backend
-- Database accepts test writes
-- LLM responds to test prompts (<3 seconds)
+- **Phase 0 (Setup):** Infrastructure foundation — validates connectivity but not playable
+- **Phase 1 (MVP):** Core perception-to-action loop — first working prototype
+- **Phase 2 (Enhancement):** Memory and intelligence — adaptive behaviors emerge
+- **Phase 3 (Polish):** UI and advanced features — production-ready system
 
 ---
 
-### Phase 1: MVP (Core Loop)
-**Status:** Not Started  
-**Duration:** 5-7 sessions  
-**Document:** `phase1-mvp.md`
+## Phase 0: Setup (Infrastructure Foundation)
 
-**Goal:** Complete cognitive loop functional
+**Goal:** Establish barebones infrastructure for network communication, database, and LLM.
 
-**Key Deliverables:**
-- Layers 1-4 (Fast Gear): Event filtering → Vectorization → Episode formation → Working Memory
-- Layer 5: Episode writes to PostgreSQL with relationship tracking
-- Layer 6: LLM generates basic intents via Brain Scheduler
-- Layer 7: Intents logged to console (MVP — physical actions in Phase 2)
-- Working Memory syncs DynamicProperties to database
+**Duration:** Short  
+**Complexity:** Medium  
+**Status:** Not playable yet
 
-**Success Criteria:**
-- Player places block near villager → Episode created in database
-- LLM generates contextually appropriate speech
-- Working Memory persists across server restarts
-- System maintains 20 TPS with 10 active villagers
-- No memory leaks after 10 minutes of testing
+### Key Deliverables
 
-**Example Flow:**
-```
-Player places diamond block
-  ↓ Layer 1: Proximity + LOS check
-  ↓ Layer 2: Vector [C:0.8, V:0.9, I:0.3, S:0.7, X:0.1]
-  ↓ Layer 3: Episode sealed after 30s
-  ↓ Layer 4: Working Memory updated
-  ↓ Layer 5: HTTP POST → PostgreSQL write
-  ↓ Layer 6: LLM generates intent: "That's a beautiful diamond block!"
-  ↓ Layer 7: Console log output
-```
+- PostgreSQL database running with base schema (episodes, relationships, working_memory, concepts)
+- Node.js backend with Express routes (/api/health, /api/memory, /api/brain)
+- llama.cpp server running with Llama 3.1 8B Q4_K_M model
+- Script API HTTP communication tested (POST and GET requests)
+- DynamicProperties schema defined and validated
+- DEBUG_MODE toggle functional in-game and backend
 
----
+### Success Criteria
 
-### Phase 2: Enhancement (Rich Features)
-**Status:** Not Started  
-**Duration:** 7-10 sessions  
-**Document:** `phase2-enhancement.md`
+✅ Backend responds to health checks  
+✅ PostgreSQL accepts queries  
+✅ llama.cpp generates completions  
+✅ Script API can send/receive HTTP requests  
+✅ DynamicProperties persist across restarts  
+✅ DEBUG_MODE enables detailed logging  
 
-**Goal:** Feature-rich, polished experience
+### What's Missing
 
-**Key Deliverables:**
-- Physical actions: Pathfinding, building, animations
-- In-game speech display (on-screen text)
-- Interactive UI: Hub, Gossip, Memories menus
-- Multi-event support: Chat, damage, containers
-- Gossip & teaching mechanics
-- Identity tag generation
-- Instinct fallback for network/LLM failures
-- Advanced memory queries
-
-**Success Criteria:**
-- Villagers walk to locations and place blocks
-- Speech appears on player's screen (not console)
-- Players can whisper facts to villagers
-- Villagers generate personality tags after 20 episodes
-- System falls back to instinct when LLM offline
-- UI navigation flows work smoothly
-
-**New Capabilities:**
-- Player: "Go to that tree" → Villager pathfinds and walks
-- Player whispers: "Diamonds are north" → Villager learns fact
-- Villager develops "loves_building" tag after observing construction
-- Backend crash → Villager waves (instinct mode)
+❌ No event filtering or vectorization  
+❌ No episode grouping or memory writes  
+❌ No LLM integration with game logic  
+❌ No villager behaviors or actions  
 
 ---
 
-### Phase 3: Polish & Optimization (Production Ready)
-**Status:** Not Started  
-**Duration:** 5-7 sessions  
-**Document:** `phase3-polish.md`
+## Phase 1: MVP (Minimal Viable Product)
 
-**Goal:** Scalable, production-ready system
+**Goal:** Build the core perception-to-action loop from player event to villager response.
 
-**Key Deliverables:**
-- Performance profiling and optimization
-- Advanced pathfinding with A* and obstacle avoidance
-- Villager-to-villager gossip propagation
-- Rate limiting and request throttling
-- Comprehensive error recovery
-- Production monitoring (Prometheus, alerts)
-- Complete documentation and deployment guides
-- Stress testing with 20+ villagers
+**Duration:** Moderate  
+**Complexity:** High  
+**Status:** Playable prototype
 
-**Success Criteria:**
-- System supports 20+ villagers with <5ms tick time
-- Advanced pathfinding navigates around obstacles
-- Gossip spreads through villager network
-- Rate limits prevent system overload
-- Monitoring dashboards operational
-- Documentation complete and tested
-- No performance degradation after 1-hour stress test
+### Key Deliverables
 
-**Advanced Features:**
-- Villager A tells fact to Villager B → B learns with reduced confidence
-- LLM queue hits 15 → Alert sent to operator
-- Database writes batched for 70% performance improvement
-- Spatial partitioning reduces proximity checks by 80%
+- **Layer 1:** Event filtering (proximity + Line of Sight)
+- **Layer 2:** Vectorization ([C, V, I, S, X] calculations)
+- **Layer 3:** Episode grouping with basic sealing (time + context shift)
+- **Layer 4:** Working Memory updates in DynamicProperties
+- **Layer 5:** Episode writes to PostgreSQL via HTTP
+- **Layer 6:** Basic LLM inference (simple prompts, speak/idle actions)
+- **Layer 7:** Action execution (speak via ActionBar)
+- **Brain Scheduler:** Basic queue (FIFO processing)
 
----
+### Success Criteria
 
-## Phase Progression Summary
+✅ Villagers detect player actions within 32 blocks  
+✅ Events converted to accurate [C, V, I, S, X] vectors  
+✅ Episodes sealed and written to database  
+✅ LLM generates simple responses  
+✅ Villagers speak responses to players  
+✅ Basic concept matching works (DB lookup)  
+✅ Complete loop: event → response in 2-10 seconds  
 
-| Phase | Focus | Complexity | Player-Visible Features |
-|-------|-------|------------|------------------------|
-| **Phase 0** | Infrastructure | Low | None (backend only) |
-| **Phase 1** | Core Loop | Medium | Console logs, basic memory |
-| **Phase 2** | Rich Features | High | Speech, UI, physical actions |
-| **Phase 3** | Production | Medium | Performance, reliability |
+### What's Missing
+
+❌ No relationship scoring (trust always 0.5)  
+❌ No personality traits or identity  
+❌ No advanced actions (pathfind, flee, stare)  
+❌ No concept learning (unknown patterns ignored)  
+❌ No priority queue or batching  
+❌ No player-facing UI (ActionBar only)  
 
 ---
 
-## Implementation Guidelines
+## Phase 2: Enhancement (Memory & Intelligence)
 
-### General Rules
+**Goal:** Add relationship tracking, personality development, and advanced behaviors.
 
-1. **Iterative Development:** Each phase must be fully functional before moving to the next
-2. **Testing Required:** Validate all features before marking phase complete
-3. **Documentation First:** Read referenced docs before implementing features
-4. **Performance Targets:** Maintain <5ms tick time for Layers 1-4
-5. **Memory Safety:** Never store entity references, always use entity IDs
+**Duration:** Moderate  
+**Complexity:** Medium-High  
+**Status:** Adaptive agents with memory
 
-### Feature Breakdown Rules
+### Key Deliverables
 
-- Max 5 steps per feature
-- If feature requires >5 steps, break into smaller features
-- Each feature has clear validation criteria
-- Files created/modified are explicitly listed
+- **Relationship Scoring:** Dynamic trust scores based on Sociality (S) axis
+- **Personality Tags:** Villagers develop traits (loves_building, is_cautious, etc.)
+- **Context-Aware Prompts:** LLM receives personality, relationship, and history
+- **Advanced Actions:** Pathfind, stare, flee actions in Layer 7
+- **LLM Concept Labeling:** Unknown patterns sent to LLM for naming
+- **Priority Queue:** High-priority events (damage) processed first
+- **Request Batching:** Multiple villagers observing same event share LLM call
 
-### Phase Completion Criteria
+### Success Criteria
 
-A phase is complete when:
-- [ ] All features implemented and tested
-- [ ] Success criteria met
-- [ ] No critical bugs remain
-- [ ] Performance targets achieved
-- [ ] Documentation updated
-- [ ] Code reviewed (if applicable)
+✅ Trust scores evolve based on interactions  
+✅ Villagers develop personality after 20+ episodes  
+✅ LLM responses reflect personality and relationships  
+✅ Pathfind/stare/flee actions work correctly  
+✅ Unknown concepts labeled by LLM and stored  
+✅ Priority queue processes critical events first  
+✅ Batching reduces LLM calls for shared observations  
 
----
+### What's Missing
 
-## Technical Architecture Reference
-
-### The 7-Layer Brain
-
-```
-┌────────────────────────────────────────┐
-│         FAST GEAR (Script API)         │
-├────────────────────────────────────────┤
-│ Layer 1: Sensory (Proximity + LOS)    │
-│ Layer 2: Vectorizer ([C,V,I,S,X])     │
-│ Layer 3: Sequencer (Episodes)         │
-│ Layer 4: Working Memory (DynProps)    │
-└────────────────────────────────────────┘
-              ↓ HTTP POST
-┌────────────────────────────────────────┐
-│      SLOW GEAR (Node.js Backend)       │
-├────────────────────────────────────────┤
-│ Layer 5: Long-Term Memory (PostgreSQL)│
-│ Brain Scheduler (LLM Queue)           │
-│ Layer 6: Language Cortex (llama.cpp)  │
-└────────────────────────────────────────┘
-              ↓ HTTP GET (polling)
-┌────────────────────────────────────────┐
-│         FAST GEAR (Script API)         │
-├────────────────────────────────────────┤
-│ Layer 7: Action Layer (Physical Body) │
-└────────────────────────────────────────┘
-```
-
-### Data Flow
-
-1. **Player Action** → Layer 1 filters by proximity/LOS
-2. **Filtered Event** → Layer 2 calculates semantic vector
-3. **Semantic Vector** → Layer 3 groups into episode
-4. **Episode Summary** → Layer 4 updates Working Memory
-5. **Working Memory** → Layer 5 writes to PostgreSQL via HTTP
-6. **Database Context** → Layer 6 LLM generates intent
-7. **Intent Packet** → Layer 7 polls and executes action
-8. **Physical Action** → Player observes villager behavior
+❌ No player UI (still ActionBar only)  
+❌ No gossip system (knowledge not shared)  
+❌ No Macro-Concepts (Spleef not recognized)  
+❌ No multi-turn conversations  
+❌ No instinct fallback system  
+❌ No Debug Dashboard  
 
 ---
 
-## Project Structure
+## Phase 3: Polish (UI & Advanced Features)
+
+**Goal:** Complete the system with player UI, gossip, Macro-Concepts, and production polish.
+
+**Duration:** Substantial  
+**Complexity:** High  
+**Status:** Production-ready
+
+### Key Deliverables
+
+- **Interaction Hub:** Main menu for villager interaction
+- **Gossip & Whisper:** View memories and send natural language messages
+- **Debug Dashboard:** Full CRUD operations on villager data (admin only)
+- **Macro-Pattern Detection (Tier B):** Recognizes Spleef, Tag, minigames
+- **Gossip System:** Villagers share learned concepts with each other
+- **Multi-Turn Conversations:** Chat context maintained across whispers
+- **Instinct Fallback:** Hardcoded behaviors when backend/LLM offline
+- **Performance Optimizations:** Supports 20+ villagers at 20 TPS
+- **Production Monitoring:** Health checks, error logging, admin alerts
+
+### Success Criteria
+
+✅ All UI menus functional and polished  
+✅ Whisper system works with async feedback  
+✅ Macro-Concepts detected and labeled correctly  
+✅ Gossip propagates knowledge between villagers  
+✅ Debug Dashboard provides full control  
+✅ Instinct fallback activates gracefully  
+✅ System handles all error scenarios  
+✅ Performance targets met with 20+ villagers  
+✅ Production-ready with comprehensive logging  
+
+### What's Left for Future
+
+💡 Teaching system (player-directed concept injection)  
+💡 Villager-to-villager conversations  
+💡 Custom animations and models  
+💡 Web dashboard for monitoring  
+💡 Distributed LLM for scaling >30 villagers  
+
+---
+
+## Phase Comparison Matrix
+
+| Feature | Phase 0 | Phase 1 | Phase 2 | Phase 3 |
+|---------|---------|---------|---------|---------|
+| **PostgreSQL Database** | ✅ Schema only | ✅ Episode writes | ✅ Relationships | ✅ Gossip + Macros |
+| **Node.js Backend** | ✅ Health check | ✅ Memory routes | ✅ Full context | ✅ CRUD + monitoring |
+| **llama.cpp Integration** | ✅ Test calls | ✅ Basic prompts | ✅ Context-aware | ✅ Optimized batching |
+| **Layer 1 (Sensory)** | ❌ | ✅ Proximity + LOS | ✅ Same | ✅ Optimized |
+| **Layer 2 (Vectorizer)** | ❌ | ✅ Basic vectors | ✅ Same | ✅ Same |
+| **Layer 3 (Sequencer)** | ❌ | ✅ Time + shift seal | ✅ LLM labeling | ✅ Tier B patterns |
+| **Layer 4 (Working Memory)** | ✅ Schema only | ✅ DynamicProps sync | ✅ Same | ✅ Chat history |
+| **Layer 5 (LTM)** | ❌ | ✅ Episode storage | ✅ Relationships | ✅ Gossip |
+| **Layer 6 (Language)** | ❌ | ✅ Simple prompts | ✅ Full context | ✅ Optimized |
+| **Layer 7 (Actions)** | ❌ | ✅ Speak + idle | ✅ Pathfind + flee | ✅ Same |
+| **Layer 8 (Instinct)** | ❌ | ❌ | ❌ | ✅ Fallback system |
+| **Brain Scheduler** | ❌ | ✅ FIFO queue | ✅ Priority + batch | ✅ Optimized |
+| **Player UI** | ❌ | ❌ | ❌ | ✅ Full menus |
+| **Debug Tools** | ✅ Toggle only | ✅ Console logs | ✅ Same | ✅ Full dashboard |
+| **Concept Learning** | ❌ | ✅ DB lookup | ✅ LLM labeling | ✅ Macro-patterns |
+| **Relationship Tracking** | ❌ | ❌ | ✅ Trust scores | ✅ Same |
+| **Personality Traits** | ❌ | ❌ | ✅ Identity tags | ✅ Same |
+| **Gossip System** | ❌ | ❌ | ❌ | ✅ Knowledge sharing |
+| **Multi-Turn Chat** | ❌ | ❌ | ❌ | ✅ Context memory |
+| **Error Handling** | ⚠️ Basic | ⚠️ Network only | ⚠️ Same | ✅ Comprehensive |
+| **Performance** | N/A | ✅ <5ms Fast Gear | ✅ Same | ✅ 20+ villagers |
+
+---
+
+## Iteration Timeline
 
 ```
-Immersive_Villagers BP/
-├── scripts/                    # Fast Gear (Layers 1-4)
-│   ├── layers/
-│   ├── ui/
-│   ├── utils/
-│   ├── config/
-│   ├── events/
-│   └── main.js
-├── nodeDB/                     # Slow Gear (Layers 5-7)
-│   ├── db/
-│   ├── queries/
-│   ├── routes/
-│   ├── brain/
-│   ├── middleware/
-│   ├── utils/
-│   ├── app.js
-│   └── server.js
-└── _docs/                      # Documentation
-    ├── phases/                 # THIS DIRECTORY
-    ├── project-overview.md
-    ├── tech-stack.md
-    ├── interaction-flow.md
-    └── project-rules.md
+Phase 0: Setup
+├─ PostgreSQL + Node.js + llama.cpp
+├─ HTTP communication
+└─ DynamicProperties + DEBUG_MODE
+     ↓
+Phase 1: MVP
+├─ Layers 1-4 (Fast Gear)
+├─ Layers 5-7 (Slow Gear)
+├─ Brain Scheduler (basic)
+└─ End-to-end loop working
+     ↓
+Phase 2: Enhancement
+├─ Relationship scoring
+├─ Personality emergence
+├─ Advanced actions
+├─ Priority queue + batching
+└─ LLM concept labeling
+     ↓
+Phase 3: Polish
+├─ Player UI (Hub, Gossip, Debug)
+├─ Macro-Concepts (Tier B)
+├─ Gossip system
+├─ Multi-turn conversations
+├─ Instinct fallback
+├─ Performance optimizations
+└─ Production monitoring
 ```
 
 ---
 
-## Key Technologies
+## Feature Progression
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| Game-Side | Minecraft Script API (JavaScript) | Layers 1-4 |
-| Backend | Node.js + Express | Layers 5-7 |
-| Database | PostgreSQL + pg-pool | Long-term memory |
-| LLM | llama.cpp (Llama 3 7B Q4_K_M) | Decision-making |
-| State | DynamicProperties | Working Memory |
-| Logging | Pino | Structured logging |
-| Networking | @minecraft/server-net | HTTP requests |
+### Core Cognitive Loop
+
+| Layer | Phase 0 | Phase 1 | Phase 2 | Phase 3 |
+|-------|---------|---------|---------|---------|
+| L1: Sensory | Schema | ✅ Working | ✅ Same | ✅ Optimized |
+| L2: Vectorizer | Schema | ✅ Working | ✅ Same | ✅ Same |
+| L3: Sequencer | Schema | ✅ Basic | ✅ LLM labels | ✅ Tier B |
+| L4: Working Memory | ✅ Schema | ✅ Working | ✅ Same | ✅ Chat memory |
+| L5: LTM | ✅ Schema | ✅ Episodes | ✅ Relationships | ✅ Gossip |
+| L6: Language | Test only | ✅ Basic | ✅ Context-aware | ✅ Optimized |
+| L7: Actions | Schema | ✅ Speak/idle | ✅ Path/flee | ✅ Same |
+| L8: Instinct | - | - | - | ✅ Fallback |
+
+### Intelligence Features
+
+| Feature | Phase 0 | Phase 1 | Phase 2 | Phase 3 |
+|---------|---------|---------|---------|---------|
+| Concept Matching | - | ✅ DB lookup | ✅ Same | ✅ Same |
+| Concept Learning | - | ❌ Ignored | ✅ LLM labels | ✅ Same |
+| Macro-Concepts | - | ❌ | ❌ | ✅ Tier B |
+| Relationship Scoring | - | ❌ Default 0.5 | ✅ Dynamic | ✅ Same |
+| Personality Tags | - | ❌ | ✅ Auto-emerge | ✅ Same |
+| Knowledge Sharing | - | ❌ | ❌ | ✅ Gossip |
+
+### User Experience
+
+| Feature | Phase 0 | Phase 1 | Phase 2 | Phase 3 |
+|---------|---------|---------|---------|---------|
+| Player UI | - | ❌ ActionBar | ❌ ActionBar | ✅ Full menus |
+| Natural Language Input | - | ❌ | ❌ | ✅ Whisper |
+| Memory Viewing | - | ❌ | ❌ | ✅ Gossip menu |
+| Debug Tools | ✅ Toggle | ✅ Console logs | ✅ Same | ✅ Full dashboard |
+| Error Feedback | ⚠️ Crashes | ⚠️ Silent fail | ⚠️ Same | ✅ Graceful |
 
 ---
 
-## Performance Targets
+## Cumulative Features by Phase End
 
-| Metric | Phase 1 | Phase 2 | Phase 3 |
-|--------|---------|---------|---------|
-| Active Villagers | 5-10 | 10-15 | 20+ |
-| Avg Tick Time | <5ms | <5ms | <5ms |
-| LLM Throughput | 10 req/min | 15 req/min | 20 req/min |
-| Memory Usage | <5GB | <6GB | <7GB |
-| Database Writes | 50ms avg | 75ms avg | 50ms avg (batched) |
+### After Phase 0 (Setup)
+- ✅ Infrastructure tested (PostgreSQL, Node.js, llama.cpp)
+- ✅ HTTP communication working
+- ✅ DEBUG_MODE toggle functional
+- **System State:** Infrastructure-only, not playable
+
+### After Phase 1 (MVP)
+- ✅ All Phase 0 features
+- ✅ Villagers observe player actions (Layer 1)
+- ✅ Events vectorized to [C, V, I, S, X] (Layer 2)
+- ✅ Episodes formed and sealed (Layer 3)
+- ✅ Working Memory tracked (Layer 4)
+- ✅ Episodes written to database (Layer 5)
+- ✅ LLM generates simple responses (Layer 6)
+- ✅ Villagers speak via ActionBar (Layer 7)
+- **System State:** Working prototype, basic interactions
+
+### After Phase 2 (Enhancement)
+- ✅ All Phase 1 features
+- ✅ Trust scores evolve dynamically
+- ✅ Personality traits emerge (5 basic tags)
+- ✅ Context-aware LLM prompts
+- ✅ Advanced actions (pathfind, stare, flee)
+- ✅ Unknown concepts labeled by LLM
+- ✅ Priority queue for critical events
+- ✅ Request batching for multi-villager observations
+- **System State:** Adaptive agents with memory and personality
+
+### After Phase 3 (Polish)
+- ✅ All Phase 2 features
+- ✅ Interaction Hub UI (main menu)
+- ✅ Gossip & Whisper UI (natural language)
+- ✅ Debug Dashboard (full CRUD)
+- ✅ Macro-Concepts detected (Spleef, Tag, etc.)
+- ✅ Gossip system (knowledge sharing)
+- ✅ Multi-turn conversations
+- ✅ Instinct fallback system
+- ✅ Production monitoring and error handling
+- **System State:** Production-ready, fully featured
 
 ---
 
-## Common Commands
+## Dependency Chain
 
-### Start All Services
-```bash
-# Terminal 1: PostgreSQL (if not running as service)
-sudo systemctl start postgresql
-
-# Terminal 2: llama.cpp
-cd llama.cpp
-./server -m models/llama-3-7b-q4_k_m.gguf -c 2048 --port 8080 --threads 4
-
-# Terminal 3: Node.js Backend
-cd nodeDB
-node server.js
-
-# Terminal 4: Bedrock Dedicated Server
-cd bedrock-server-1.26.1.1
-./bedrock_server
+```
+Phase 0 (Setup)
+├─ PostgreSQL installed
+├─ Node.js backend skeleton
+├─ llama.cpp server running
+├─ HTTP communication tested
+└─ DynamicProperties validated
+     ↓
+Phase 1 (MVP)
+├─ Requires: Phase 0 complete
+├─ Layers 1-7 implemented
+├─ Brain Scheduler (basic)
+└─ End-to-end loop working
+     ↓
+Phase 2 (Enhancement)
+├─ Requires: Phase 1 stable
+├─ Relationship system
+├─ Personality emergence
+├─ Advanced behaviors
+└─ Priority queue + batching
+     ↓
+Phase 3 (Polish)
+├─ Requires: Phase 2 stable
+├─ Player UI
+├─ Macro-Concepts
+├─ Gossip system
+├─ Instinct fallback
+└─ Production monitoring
 ```
 
-### Testing
-```bash
-# Health check
-curl http://localhost:3000/api/health
+---
 
-# Test episode write
-curl -X POST http://localhost:3000/api/memory/episode \
-  -H "Content-Type: application/json" \
-  -d '{"villagerID":"test-1","actorID":"player-1","episodeSummary":{"vectorAverage":{"C":0.8,"V":0.9,"I":0.3,"S":0.7,"X":0.1},"duration":5000,"eventCount":2}}'
+## Testing Strategy by Phase
 
-# Check database
-psql -U minecraft_ai -d villager_memory -c "SELECT COUNT(*) FROM episodes;"
+### Phase 0 Testing
+- **Focus:** Connectivity and infrastructure
+- **Method:** Unit tests, curl commands, manual DB queries
+- **Tools:** psql, curl, node test scripts
 
-# View metrics
-curl http://localhost:3000/api/metrics/dashboard
-```
+### Phase 1 Testing
+- **Focus:** Data flow and integration
+- **Method:** In-game testing, DEBUG_MODE logging
+- **Tools:** Console logs, backend Pino logs, PostgreSQL queries
+
+### Phase 2 Testing
+- **Focus:** Behavioral accuracy and performance
+- **Method:** Scenario testing, multi-villager stress tests
+- **Tools:** DEBUG_MODE, performance metrics, TPS monitoring
+
+### Phase 3 Testing
+- **Focus:** UX and error handling
+- **Method:** End-user testing, failure injection, load testing
+- **Tools:** UI walkthroughs, backend health checks, error logs
 
 ---
 
-## Troubleshooting
+## Risk Assessment
 
-### Common Issues
+### Phase 0 Risks
+- **Low:** Infrastructure setup is well-documented
+- **Mitigation:** Follow official PostgreSQL, Node.js, llama.cpp docs
 
-**Issue:** Backend won't start  
-**Solution:** Check if port 3000 is already in use: `lsof -i :3000`
+### Phase 1 Risks
+- **Medium:** Network latency, async coordination complexity
+- **Mitigation:** Use polling pattern, add timeout handlers, test with DEBUG_MODE
 
-**Issue:** Script API can't reach backend  
-**Solution:** Verify `@minecraft/server-net` is in manifest.json dependencies
+### Phase 2 Risks
+- **Medium:** LLM quality for concept labeling, relationship math accuracy
+- **Mitigation:** Test with diverse scenarios, tune trust score formula, validate LLM outputs
 
-**Issue:** LLM responses are slow  
-**Solution:** Use smaller model (7B vs 13B) or reduce context length
+### Phase 3 Risks
+- **Low:** Builds on stable foundation from Phases 1-2
+- **Mitigation:** Incremental feature rollout, comprehensive error handling
 
-**Issue:** Database connection errors  
-**Solution:** Check PostgreSQL is running and credentials in `.env` are correct
+---
 
-**Issue:** Villagers not responding  
-**Solution:** Enable DEBUG_MODE and check Content Log for errors
+## Performance Targets by Phase
+
+| Metric | Phase 0 | Phase 1 | Phase 2 | Phase 3 |
+|--------|---------|---------|---------|---------|
+| **Fast Gear Latency** | N/A | <5ms | <5ms | <5ms |
+| **Layer 5 Write** | N/A | 50-150ms | 50-150ms | 50-150ms |
+| **LLM Inference** | 2-4s (test) | 2-4s | 3-5s | 3-5s |
+| **Active Villagers** | 1 (test) | 5-10 | 10-15 | 20-30 |
+| **Server TPS** | 20 | 20 | 20 | 20 |
+| **HTTP Throughput** | 10 req/s | 50 req/s | 100 req/s | 200 req/s |
+
+---
+
+## Phase Selection Guide
+
+**Starting fresh?** → Begin with Phase 0  
+**Infrastructure works?** → Skip to Phase 1  
+**Core loop works?** → Jump to Phase 2  
+**Ready for users?** → Implement Phase 3  
+
+---
+
+## Document Index
+
+| Phase | Document | Status |
+|-------|----------|--------|
+| **Phase 0** | `phase0-setup.md` | ✅ Ready |
+| **Phase 1** | `phase1-mvp.md` | ✅ Ready |
+| **Phase 2** | `phase2-enhancement.md` | ✅ Ready |
+| **Phase 3** | `phase3-polish.md` | ✅ Ready |
+| **Overview** | `phases-overview.md` | ✅ THIS FILE |
 
 ---
 
 ## Next Steps
 
-1. **Review Documentation:**
-   - Read `_docs/project-overview.md` for architecture
-   - Read `_docs/tech-stack.md` for technology details
-   - Read `_docs/interaction-flow.md` for data flow
-
-2. **Start Phase 0:**
-   - Open `phase0-setup.md`
-   - Follow step-by-step instructions
-   - Validate all features before moving to Phase 1
-
-3. **Set Up Development Environment:**
-   - Install PostgreSQL, Node.js, llama.cpp
-   - Create workspace directories
-   - Clone/download required models
-
-4. **Enable DEBUG_MODE:**
-   - In-game: `/scriptevent debug:enable`
-   - Backend: Set `DEBUG_MODE=true` in `.env`
-   - View detailed logs for troubleshooting
+1. **Read Phase 0:** Review infrastructure requirements
+2. **Validate Prerequisites:** Ensure PostgreSQL, Node.js, llama.cpp are available
+3. **Begin Implementation:** Follow Phase 0 step-by-step
+4. **Test Thoroughly:** Complete testing checklist before moving to Phase 1
+5. **Iterate:** Each phase builds on the previous — don't skip ahead
 
 ---
 
-## Contributing
-
-When implementing features:
-1. Read the phase document completely before starting
-2. Follow the 5-step rule (max 5 steps per feature)
-3. Test each feature before marking complete
-4. Update documentation if behavior changes
-5. Use JSDoc comments for all functions
-6. Keep files under 500 lines (split if larger)
-
----
-
-## Support & Resources
-
-- **Project Rules:** `_docs/project-rules.md`
-- **UI Guidelines:** `_docs/ui-rules.md`
-- **UX Guidelines:** `_docs/ux-rules.md`
-- **Tech Stack Details:** `_docs/tech-stack.md`
-
----
-
-**Document Type:** Phase Index  
+**Document Type:** Phase Overview  
+**Author:** Senior Minecraft Scripting Engineer  
+**Status:** Complete  
 **Version:** 1.0  
-**Status:** Ready for Implementation  
-**Last Updated:** Feb 23, 2026
+**Last Updated:** Feb 24, 2026

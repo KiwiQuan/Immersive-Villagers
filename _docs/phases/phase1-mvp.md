@@ -1,597 +1,477 @@
-# Phase 1: MVP — Core Cognitive Loop
+# 🚀 Phase 1: MVP (Minimal Viable Product)
 
-**Status:** Minimum Viable Product  
-**Goal:** Complete sensory-to-action loop functional  
-**Deliverable:** Villagers observe player actions, store memories, and react with simple behaviors  
-**Duration Target:** 5-7 implementation sessions
+## Goal
 
----
-
-## Overview
-
-This phase implements the core 7-layer cognitive architecture in its simplest form. Villagers will detect player actions, convert them to semantic vectors, store episodes in the database, and execute basic reactions (console output only for now, physical actions in Phase 2).
-
-**Success Criteria:**
-- Player places a block → Villager detects event (Layer 1)
-- Event converted to [C, V, I, S, X] vector (Layer 2)
-- Vectors grouped into episodes (Layer 3)
-- Working Memory updated in DynamicProperties (Layer 4)
-- Episode written to PostgreSQL (Layer 5)
-- LLM generates basic intent (Layer 6)
-- Intent logged to console (Layer 7 — minimal action)
+Build the **core perception-to-action loop** that allows villagers to observe player actions, convert them to semantic vectors, store memories, and respond with simple actions. This phase delivers a **working prototype** where a villager can "see" a player placing blocks, form a basic memory, ask the LLM for a response, and speak back.
 
 ---
 
-## Feature 1: Sensory Layer (Layer 1)
+## Success Criteria
 
-**Goal:** Filter game events by proximity and line of sight
-
-### Steps:
-1. Create `scripts/layers/layer1_sensory.js` with event subscription setup
-2. Implement proximity filter: check distance between event location and villager (<32 blocks)
-3. Implement LOS (Line of Sight) raycast check to validate visibility
-4. Subscribe to key events: `playerPlaceBlock`, `playerBreakBlock`, `playerDamageEntity`
-5. Output `FilteredEventContext` packet when event passes filters
-
-**Files Created:**
-- `scripts/layers/layer1_sensory.js`
-- `scripts/utils/raycast_helpers.js`
-- `scripts/config/constants.js`
-
-**Data Packet Output:**
-```javascript
-{
-  type: "FilteredEventContext",
-  eventName: "playerPlaceBlock",
-  actorID: "player-uuid-123",
-  villagerID: "villager-entity-456",
-  coordinates: { x: 100, y: 64, z: -50 },
-  blockType: "minecraft:diamond_block",
-  proximity: 12.5,
-  hasLOS: true,
-  timestamp: Date.now()
-}
-```
-
-**Validation:**
-- Place block near villager → Console log shows filtered event
-- Place block far from villager → No log (filtered out)
-- Place block behind wall → No log (LOS failed)
+- Villager detects player actions within 32-block radius
+- Events are converted to [C, V, I, S, X] vectors accurately
+- Vectors are grouped into episodes with basic sealing logic
+- Working Memory updates in DynamicProperties in real-time
+- Episodes are written to PostgreSQL via HTTP POST
+- LLM generates simple responses (speak or idle)
+- Villager speaks responses to players via ActionBar
+- Basic concept matching works (DB lookup for known patterns)
 
 ---
 
-## Feature 2: Vectorization Layer (Layer 2)
+## Feature 1: Layer 1 (Sensory Filter)
 
-**Goal:** Convert filtered events into semantic vectors [C, V, I, S, X]
+**Deliverable:** Event listener system that filters game events by proximity and Line of Sight.
 
-### Steps:
-1. Create `scripts/layers/layer2_vectorizer.js` with vector calculation logic
-2. Define `scripts/config/vector_rules.js` with block value mappings
-3. Implement axis calculators: `calculateC()`, `calculateV()`, `calculateI()`, `calculateS()`, `calculateX()`
-4. Apply mathematical rules to generate normalized vectors (-1.0 to +1.0)
-5. Output `SemanticVector` packet with calculated values
+### Steps
 
-**Files Created:**
-- `scripts/layers/layer2_vectorizer.js`
-- `scripts/config/vector_rules.js`
-- `scripts/utils/vector_math.js`
+1. **Create event listeners (`scripts/events/player_events.js`)**
+   - Subscribe to playerPlaceBlock, playerBreakBlock events
+   - Subscribe to entityHurt, playerSpawn events
+   - Extract event data (actor, location, block type)
+   - Pass raw events to Layer 1 filter
 
-**Vector Rules Example:**
-```javascript
-// Constructiveness (C)
-PLACE_BLOCK: +0.8
-BREAK_BLOCK: -0.6
+2. **Implement proximity filter (`scripts/layers/layer1_sensory.js`)**
+   - Get all AI-tagged villagers via dimension.getEntities()
+   - Calculate distance between event location and each villager
+   - Filter events beyond AWARENESS_RADIUS (32 blocks)
+   - Create FilteredEventContext packet for nearby events
 
-// Value (V) by block type
-'minecraft:diamond_block': +0.9
-'minecraft:iron_block': +0.6
-'minecraft:dirt': +0.1
+3. **Implement Line of Sight check**
+   - Use entity.getBlockFromViewDirection() for LOS raycast
+   - Check if blocks obstruct view between villager and event location
+   - Mark events as hasLOS: true/false in FilteredEventContext
+   - Skip LOS check for audio events (explosions, chat)
 
-// Intensity (I) by action speed
-QUICK_PLACEMENT: +0.3
-EXPLOSION: +0.9
+4. **Add priority classification**
+   - Classify events as P0 (critical), P1 (high), P2 (low)
+   - P0: entityHurt on villager, fire nearby, explosions
+   - P1: player actions within 10 blocks, block changes
+   - P2: player movement, ambient entity spawns
 
-// Sociality (S) by context
-NEAR_VILLAGER_HOME: +0.7
-BREAK_VILLAGER_BED: -0.9
-
-// Complexity (X) by block type
-REDSTONE_COMPONENTS: +0.8
-SIMPLE_BLOCKS: +0.1
-```
-
-**Data Packet Output:**
-```javascript
-{
-  type: "SemanticVector",
-  villagerID: "villager-entity-456",
-  actorID: "player-uuid-123",
-  vector: {
-    C: 0.8,
-    V: 0.9,
-    I: 0.3,
-    S: 0.7,
-    X: 0.1
-  },
-  rawEvent: "playerPlaceBlock",
-  blockType: "minecraft:diamond_block",
-  timestamp: Date.now()
-}
-```
-
-**Validation:**
-- Place diamond block → High V (0.9), High C (0.8)
-- Break dirt → Low V (0.1), Negative C (-0.6)
-- Place redstone → High X (0.8)
+5. **Output FilteredEventContext to Layer 2**
+   - Create JSON packet with event details
+   - Include villagerID, actorID, coordinates, proximity, hasLOS
+   - Pass to Layer 2 vectorizer function
+   - Add debugLog() call for DEBUG_MODE
 
 ---
 
-## Feature 3: Sequencer Layer (Layer 3)
+## Feature 2: Layer 2 (Vectorizer)
 
-**Goal:** Group vectors into coherent episodes
+**Deliverable:** Mathematical conversion of events into 5-axis semantic vectors.
 
-### Steps:
-1. Create `scripts/layers/layer3_sequencer.js` with episode accumulation logic
-2. Implement running average calculation for episode [C, V, I, S, X]
-3. Define episode sealing triggers: context shift (vector difference >0.3), inactivity (30s), manual seal
-4. Store open episodes in module-level Map (villagerID → episode data)
-5. Output `EpisodeSummary` packet when episode is sealed
+### Steps
 
-**Files Created:**
-- `scripts/layers/layer3_sequencer.js`
+1. **Create vector rules lookup (`scripts/config/vector_rules.js`)**
+   - Define base C values for block place (+0.8) and break (-0.6)
+   - Define V values for common blocks (diamond: 0.9, dirt: 0.1, etc.)
+   - Define I values for event types (explosion: 0.9, slow place: 0.2)
+   - Define X values for logic blocks (redstone: 0.8, dirt: 0.1)
 
-**Data Packet Output:**
-```javascript
-{
-  type: "EpisodeSummary",
-  episodeID: "ep_1708718400_v456",
-  villagerID: "villager-entity-456",
-  actorID: "player-uuid-123",
-  vectorAverage: {
-    C: 0.75,
-    V: 0.82,
-    I: 0.35,
-    S: 0.68,
-    X: 0.15
-  },
-  rawVectors: [
-    { C: 0.8, V: 0.9, I: 0.3, S: 0.7, X: 0.1, timestamp: 1708718400000 },
-    { C: 0.7, V: 0.74, I: 0.4, S: 0.66, X: 0.2, timestamp: 1708718405000 }
-  ],
-  duration: 5000,
-  eventCount: 2,
-  sealReason: "context_shift",
-  timestamp: Date.now()
-}
-```
+2. **Implement vectorization logic (`scripts/layers/layer2_vectorizer.js`)**
+   - Create calculateVector(eventContext) function
+   - Extract C from event type (place vs. break)
+   - Extract V from block type (lookup in vector_rules)
+   - Extract I from event intensity (damage amount, speed)
+   - Calculate S and X based on context and block type
 
-**Validation:**
-- Place 3 blocks quickly → Single episode with averaged vector
-- Wait 30 seconds → Episode auto-seals (inactivity)
-- Switch from building to breaking → Episode seals (context shift)
+3. **Add Sociality (S) calculation**
+   - Check if event occurred in villager's home territory (25-block radius from spawn)
+   - Positive S for building near home, negative S for destroying
+   - High S for direct interaction (chat, trade), low S for distant actions
+   - Adjust S based on trust score (if available)
+
+4. **Create SemanticVector output packet**
+   - Package vector { C, V, I, S, X } with metadata
+   - Include rawEvent, blockType, actorID, villagerID, timestamp
+   - Validate vector values are in range [-1, 1]
+   - Add debugLog() call for DEBUG_MODE
+
+5. **Output SemanticVector to Layer 3**
+   - Pass vector packet to Layer 3 sequencer
+   - Log vector to console if DEBUG_MODE enabled
+   - Track vector count for performance monitoring
+   - Handle errors gracefully (fallback to neutral vector)
 
 ---
 
-## Feature 4: Working Memory (Layer 4)
+## Feature 3: Layer 3 (Episode Sequencer - Basic)
 
-**Goal:** Store villager's active state in DynamicProperties
+**Deliverable:** Groups vectors into episodes with time-based and context-shift sealing.
 
-### Steps:
-1. Create `scripts/layers/layer4_working_memory.js` with DynamicProperties management
-2. Define property schema: `wm_currentMood_{C,V,I,S,X}`, `wm_currentFocus`, `wm_shockState`
-3. Implement `updateWorkingMemory()` that writes to DynamicProperties
-4. Set `wm_needsSync` flag for database sync (debounced to every 5 seconds)
-5. Verify properties persist across server restarts
+### Steps
 
-**Files Created:**
-- `scripts/layers/layer4_working_memory.js`
-- `scripts/utils/entity_helpers.js`
+1. **Create episode buffer system (`scripts/layers/layer3_sequencer.js`)**
+   - Maintain Map of villagerID → current Episode object
+   - Episode object contains: episodeID, rawVectors[], vectorAverage, startTime, duration
+   - Initialize empty episode on first vector for each villager
+   - Append incoming vectors to current episode
 
-**DynamicProperties Schema:**
-```javascript
-{
-  wm_currentFocus: "player-uuid-123",
-  wm_currentMood_C: 0.75,
-  wm_currentMood_V: 0.82,
-  wm_currentMood_I: 0.35,
-  wm_currentMood_S: 0.68,
-  wm_currentMood_X: 0.15,
-  wm_shockState: false,
-  wm_lastUpdate: 1708718405000,
-  wm_needsSync: true
-}
+2. **Implement vector averaging**
+   - Calculate running average of [C, V, I, S, X] across all vectors
+   - Update vectorAverage after each new vector append
+   - Use incremental averaging formula to avoid recalculating entire array
+   - Track vector count in episode
+
+3. **Implement episode sealing logic**
+   - Time-based seal: 30 seconds of inactivity (no new vectors)
+   - Context-shift seal: New vector differs from average by >0.3 on any axis
+   - Manual seal: High-intensity event (I > 0.8) forces immediate seal
+   - Create EpisodeSummary packet with vectorAverage, duration, eventCount, sealReason
+
+4. **Add basic concept matching (DB lookup)**
+   - Calculate Euclidean distance between vectorAverage and known concepts in database
+   - If distance < 0.2, tag episode with matching concept_id
+   - If no match, tag as "unknown" for LLM labeling later
+   - Query PostgreSQL via HTTP GET /api/memory/concepts
+
+5. **Output EpisodeSummary to Layer 4**
+   - Pass sealed episode to Layer 4 for Working Memory update
+   - Clear episode buffer for this villager
+   - Add debugLog() with episode details
+   - Start new episode buffer immediately
+
+---
+
+## Feature 4: Layer 4 (Working Memory Management)
+
+**Deliverable:** Real-time Working Memory updates in DynamicProperties with debounced PostgreSQL sync.
+
+### Steps
+
+1. **Implement Working Memory update (`scripts/layers/layer4_working_memory.js`)**
+   - Receive EpisodeSummary from Layer 3
+   - Update villager's currentMood to match vectorAverage
+   - Update currentFocus to actorID from episode
+   - Set shockState if episode has high Intensity (I > 0.8)
+
+2. **Write to DynamicProperties**
+   - Use setWorkingMemory() helper to write all WM properties
+   - Set wm_needsSync flag to true
+   - Update wm_lastUpdate timestamp
+   - Verify entity.isValid() before writing
+
+3. **Create debounced sync loop**
+   - Run system.runInterval every 100 ticks (5 seconds)
+   - For each villager, check wm_needsSync flag
+   - If true, send HTTP POST to /api/memory/sync with Working Memory state
+   - Clear wm_needsSync only after successful response
+
+4. **Handle sync failures**
+   - Catch network errors and retry on next interval
+   - Track consecutive failures in wm_syncFailureCount
+   - After 3 failures, log error and set wm_networkStatus to "offline"
+   - Retry connection check every 60 seconds
+
+5. **Output ActiveAttentionState to Layer 5**
+   - Create packet with villagerID, currentMood, currentFocus, shockState
+   - Send via HTTP POST (non-blocking)
+   - Log sync success/failure if DEBUG_MODE enabled
+   - Continue game loop regardless of sync status
+
+---
+
+## Feature 5: Layer 5 (Episode Storage)
+
+**Deliverable:** Backend endpoints that write episodes and Working Memory to PostgreSQL.
+
+### Steps
+
+1. **Create episode write endpoint (`nodeDB/routes/memory.js`)**
+   - POST /api/memory/episode accepts EpisodeSummary
+   - Validate villagerID and episodeSummary structure
+   - Call writeEpisode() query function
+   - Return episodeID and timestamp in response
+
+2. **Create episode write query (`nodeDB/queries/episodes.js`)**
+   - Connect to pool and start transaction
+   - INSERT episode data into episodes table
+   - UPDATE relationships table (increment interaction_count)
+   - COMMIT transaction and return result
+
+3. **Create Working Memory sync endpoint**
+   - POST /api/memory/sync accepts Working Memory state
+   - Use UPSERT logic (INSERT ... ON CONFLICT DO UPDATE)
+   - Update working_memory table with latest mood values
+   - Return success status
+
+4. **Create concepts lookup endpoint**
+   - GET /api/memory/concepts returns all known concepts
+   - Return concept_id, name, and vector_signature for matching
+   - Cache results in memory for fast lookups (refresh every 60s)
+   - Add pagination support (limit + offset)
+
+5. **Add request validation middleware (`nodeDB/middleware/validate.js`)**
+   - Check villagerID is present and valid string
+   - Check episodeSummary has vectorAverage object
+   - Validate vector values are numbers in range [-1, 1]
+   - Return 400 error for invalid requests
+
+---
+
+## Feature 6: Layer 6 (Basic LLM Integration)
+
+**Deliverable:** LLM generates simple IntentPackets (speak or idle) based on episode context.
+
+### Steps
+
+1. **Create Brain Scheduler (`nodeDB/brain/scheduler.js`)**
+   - Initialize in-memory queue for LLM requests
+   - Create enqueue(request) method that adds to queue and sorts by priority
+   - Create processQueue() method that handles requests sequentially
+   - Store pending intents in Map (villagerID → IntentPacket)
+
+2. **Create brain request endpoint (`nodeDB/routes/brain.js`)**
+   - POST /api/brain/request accepts villagerID, actorID, trigger
+   - Enqueue request in Brain Scheduler
+   - Return { status: "queued", requestID, estimatedWaitTime }
+   - Don't wait for LLM response (immediate return)
+
+3. **Create prompt builder (`nodeDB/brain/prompt_builder.js`)**
+   - Fetch last 3 episodes for villagerID from PostgreSQL
+   - Fetch relationship score with actorID
+   - Build simple prompt: "You are Villager X. Player Y just [action]. Respond."
+   - Keep prompt under 512 tokens for fast inference
+
+4. **Integrate LLM inference in Brain Scheduler**
+   - Call callLLM() with constructed prompt
+   - Parse LLM response as JSON (extract action and speechText)
+   - Create IntentPacket { action, speechText, targetPlayerID }
+   - Store in pendingIntents Map with status: "ready"
+
+5. **Create polling endpoint**
+   - GET /api/brain/poll?villagerID=X checks pendingIntents Map
+   - If intent is ready, return { status: "ready", intentPacket }
+   - If not ready, return { status: "waiting" }
+   - Remove intent from Map after it's consumed (single use)
+
+---
+
+## Feature 7: Layer 7 (Action Execution)
+
+**Deliverable:** Villagers execute LLM-generated intents (speak or idle actions).
+
+### Steps
+
+1. **Create polling loop (`scripts/layers/layer7_action_layer.js`)**
+   - Run system.runInterval every 40 ticks (2 seconds)
+   - For each AI-tagged villager, send GET /api/brain/poll
+   - Parse response and check if status is "ready"
+   - If ready, extract intentPacket and execute
+
+2. **Implement action dispatcher**
+   - Create executeIntent(villagerEntity, intentPacket) function
+   - Switch on intentPacket.action (speak, idle)
+   - For "speak": display text via targetPlayer.onScreenDisplay.setActionBar()
+   - For "idle": do nothing (villager continues current animation)
+
+3. **Add speak action handler**
+   - Get target player entity via world.getEntity(targetPlayerID)
+   - Format message: `§e[VillagerName]: ${speechText}`
+   - Display via onScreenDisplay.setActionBar() (5 second duration)
+   - Log speech if DEBUG_MODE enabled
+
+4. **Add timeout fallback**
+   - Track polling attempts in DynamicProperty (wm_pollingAttempts)
+   - After 10 failed polls (20 seconds), fall back to idle
+   - Reset polling attempts counter on successful intent retrieval
+   - Log timeout if DEBUG_MODE enabled
+
+5. **Test action execution**
+   - Trigger event near villager (place diamond block)
+   - Wait 2-5 seconds for LLM response
+   - Verify villager speaks response via ActionBar
+   - Test with multiple villagers simultaneously
+
+---
+
+## Feature 8: End-to-End Integration Test
+
+**Deliverable:** Complete loop from player action to villager response works seamlessly.
+
+### Steps
+
+1. **Setup test environment**
+   - Start PostgreSQL database
+   - Start Node.js backend (npm start)
+   - Start llama.cpp server
+   - Start Minecraft Bedrock server with behavior pack
+
+2. **Spawn test villager**
+   - Spawn villager_v2 in overworld
+   - Tag with ai_villager tag
+   - Initialize Working Memory via layer4_working_memory.js
+   - Verify villager appears in logs if DEBUG_MODE enabled
+
+3. **Trigger test event**
+   - Player places diamond block within 10 blocks of villager
+   - Verify Layer 1 detects event (check console logs)
+   - Verify Layer 2 calculates vector (check DEBUG logs)
+   - Verify Layer 3 appends vector to episode
+
+4. **Wait for episode seal and LLM response**
+   - Place 2-3 more blocks to trigger context shift seal
+   - Verify Layer 4 updates Working Memory (check DynamicProperties)
+   - Verify Layer 5 writes episode to PostgreSQL (check backend logs)
+   - Wait 2-5 seconds for LLM inference
+
+5. **Verify villager response**
+   - Confirm Layer 7 polls and retrieves IntentPacket
+   - Confirm villager speaks response via ActionBar
+   - Check backend logs for complete request lifecycle
+   - Test with different event types (break block, chat, etc.)
+
+---
+
+## Testing Checklist
+
+- [ ] Layer 1 filters events by proximity (ignores events >32 blocks)
+- [ ] Layer 1 filters events by Line of Sight (ignores occluded events)
+- [ ] Layer 2 calculates accurate [C, V, I, S, X] vectors for common blocks
+- [ ] Layer 3 seals episodes after 30s inactivity or context shift
+- [ ] Layer 3 matches episodes to known concepts in database
+- [ ] Layer 4 updates Working Memory in DynamicProperties
+- [ ] Layer 4 syncs to PostgreSQL every 5 seconds
+- [ ] Layer 5 writes episodes to database successfully
+- [ ] Layer 6 generates valid IntentPackets with speak/idle actions
+- [ ] Layer 7 executes speak actions via ActionBar
+- [ ] Complete loop takes 2-10 seconds from event to response
+- [ ] Multiple villagers can operate simultaneously without conflicts
+- [ ] System handles network errors gracefully (no crashes)
+- [ ] DEBUG_MODE shows full data flow in console logs
+
+---
+
+## Known Limitations at End of Phase 1
+
+- No relationship scoring (trust always defaults to 0.5)
+- No identity tags or personality traits
+- No advanced actions (pathfind, stare, flee) implemented
+- No macro-pattern detection (Spleef, etc.)
+- No player-facing UI (all interactions via ActionBar)
+- LLM context is minimal (last 3 episodes only, no personality)
+- No gossip system (villagers don't share knowledge)
+- No concept teaching (LLM can't label unknown patterns yet)
+
+---
+
+## File Structure After Phase 1
+
 ```
-
-**Validation:**
-```javascript
-// Read Working Memory from a villager
-const villager = world.getEntity('villager-id');
-console.warn('Current Mood C:', villager.getDynamicProperty('wm_currentMood_C'));
-
-// Restart server → Properties still exist
+Immersive_Villagers BP/
+├── scripts/
+│   ├── layers/
+│   │   ├── layer1_sensory.js
+│   │   ├── layer2_vectorizer.js
+│   │   ├── layer3_sequencer.js
+│   │   ├── layer4_working_memory.js
+│   │   └── layer7_action_layer.js
+│   ├── events/
+│   │   ├── player_events.js
+│   │   ├── entity_events.js
+│   │   └── chat_events.js
+│   ├── config/
+│   │   ├── constants.js
+│   │   ├── vector_rules.js
+│   │   └── dynamic_properties_schema.js
+│   ├── utils/
+│   │   ├── vector_math.js
+│   │   ├── entity_helpers.js
+│   │   ├── time_helpers.js
+│   │   ├── debug_logger.js
+│   │   ├── network_helpers.js
+│   │   └── dynamic_properties_helpers.js
+│   └── main.js
+│
+├── nodeDB/
+│   ├── db/
+│   │   ├── pool.js
+│   │   └── schema.sql
+│   ├── queries/
+│   │   ├── episodes.js
+│   │   ├── working_memory.js
+│   │   └── concepts.js
+│   ├── routes/
+│   │   ├── memory.js
+│   │   ├── brain.js
+│   │   └── debug.js
+│   ├── brain/
+│   │   ├── scheduler.js
+│   │   ├── llm_client.js
+│   │   └── prompt_builder.js
+│   ├── middleware/
+│   │   ├── validate.js
+│   │   ├── logger.js
+│   │   └── error.js
+│   ├── utils/
+│   │   └── logger.js
+│   ├── app.js
+│   ├── server.js
+│   ├── package.json
+│   └── .env
+│
+└── _docs/
+    └── phases/
+        ├── phase0-setup.md
+        └── phase1-mvp.md                    # THIS FILE
 ```
 
 ---
 
-## Feature 5: Long-Term Memory Write (Layer 5)
+## Example Scenario (MVP Demo)
 
-**Goal:** Write episodes to PostgreSQL via HTTP
+### Setup
+- Villager "Barrel" spawned at (100, 64, 0)
+- Player "Steve" at (105, 64, 5) — 6 blocks away
+- Backend and LLM running, DEBUG_MODE enabled
 
-### Steps:
-1. Create `nodeDB/routes/memory.js` with Express routes
-2. Implement `POST /api/memory/episode` endpoint that accepts `EpisodeSummary`
-3. Create `nodeDB/queries/episodes.js` with database write logic using transactions
-4. Update `relationships` table: increment interaction_count, recalculate trust_score
-5. Return `IdentityContext` response with relationship score
+### Interaction Flow
 
-**Files Created:**
-- `nodeDB/routes/memory.js`
-- `nodeDB/queries/episodes.js`
-- `nodeDB/queries/relationships.js`
-
-**Endpoint Implementation:**
-```javascript
-// POST /api/memory/episode
-router.post('/episode', validateEpisode, async (req, res) => {
-  try {
-    const { villagerID, actorID, episodeSummary } = req.body;
-    
-    // Write episode and update relationships in transaction
-    const result = await writeEpisodeWithRelationships(episodeSummary);
-    
-    res.json({
-      status: 'success',
-      episodeID: result.episodeID,
-      relationshipScore: result.trustScore,
-      identityTags: result.tags
-    });
-  } catch (err) {
-    logger.error({ error: err.message }, '[Layer 5] Episode write failed');
-    res.status(500).json({ status: 'error', message: err.message });
-  }
-});
-```
-
-**Validation:**
-```bash
-# Test with curl
-curl -X POST http://localhost:3000/api/memory/episode \
-  -H "Content-Type: application/json" \
-  -d '{
-    "villagerID": "test-456",
-    "actorID": "player-123",
-    "episodeSummary": {
-      "vectorAverage": { "C": 0.8, "V": 0.9, "I": 0.3, "S": 0.7, "X": 0.1 },
-      "duration": 5000,
-      "eventCount": 2
-    }
-  }'
-
-# Check database
-psql -U minecraft_ai -d villager_memory -c "SELECT * FROM episodes ORDER BY id DESC LIMIT 1;"
-```
-
----
-
-## Feature 6: Brain Scheduler (Infrastructure)
-
-**Goal:** Queue and prioritize LLM requests
-
-### Steps:
-1. Create `nodeDB/brain/scheduler.js` with in-memory priority queue
-2. Implement `enqueue()` method that adds requests to queue
-3. Implement `processQueue()` that calls LLM sequentially (one at a time)
-4. Add priority sorting: high (shocks) → medium (interactions) → low (idle)
-5. Store completed intents in Map for polling
-
-**Files Created:**
-- `nodeDB/brain/scheduler.js`
-- `nodeDB/routes/brain.js`
-
-**Brain Scheduler Class:**
-```javascript
-class BrainScheduler {
-  constructor() {
-    this.queue = [];
-    this.pendingIntents = new Map(); // villagerID → IntentPacket
-    this.isProcessing = false;
-  }
-
-  enqueue(request) {
-    const requestID = `req_${Date.now()}_${request.villagerID}`;
-    this.queue.push({ requestID, ...request, timestamp: Date.now() });
-    
-    // Sort by priority
-    this.queue.sort((a, b) => {
-      const priorityMap = { high: 3, medium: 2, low: 1 };
-      return priorityMap[b.priority] - priorityMap[a.priority];
-    });
-    
-    if (!this.isProcessing) this.processQueue();
-    return requestID;
-  }
-
-  async processQueue() {
-    // Implementation in file
-  }
-
-  getPendingIntent(villagerID) {
-    return this.pendingIntents.get(villagerID);
-  }
-}
-```
-
-**Validation:**
-- Queue 3 requests → Processes sequentially
-- High priority request jumps to front of queue
-- Completed intents stored for polling
-
----
-
-## Feature 7: LLM Integration (Layer 6)
-
-**Goal:** Generate intent packets from LLM
-
-### Steps:
-1. Create `nodeDB/brain/llm_client.js` with llama.cpp HTTP client
-2. Create `nodeDB/brain/prompt_builder.js` with prompt templates
-3. Implement context fetching: recent episodes + relationship + personality tags
-4. Call llama.cpp with constructed prompt (512 token context)
-5. Parse LLM JSON response into `IntentPacket` format
-
-**Files Created:**
-- `nodeDB/brain/llm_client.js`
-- `nodeDB/brain/prompt_builder.js`
-- `nodeDB/brain/response_parser.js`
-
-**Prompt Template:**
-```plaintext
-You are Villager #456. You are observing Player #123.
-
-Recent Activity:
-- Episode: C=0.75, V=0.82, I=0.35, S=0.68, X=0.15
-- Duration: 5 seconds, 2 events
-
-Your Relationship with Player #123:
-- Trust Score: 0.78
-- Past Episodes: 12 interactions, mostly constructive
-
-Based on this, generate a JSON response:
-{
-  "action": "speak|idle",
-  "speechText": "What you want to say",
-  "internalMonologue": "What you're thinking"
-}
-
-Response (JSON only):
-```
-
-**IntentPacket Output:**
-```javascript
-{
-  requestID: "req_1708718405_v456",
-  villagerID: "villager-entity-456",
-  intentPacket: {
-    action: "speak",
-    speechText: "That's a beautiful diamond block!",
-    targetPlayerID: "player-uuid-123",
-    priority: "medium"
-  },
-  timestamp: Date.now(),
-  status: "ready"
-}
-```
-
-**Validation:**
-- Send test prompt → LLM returns valid JSON
-- Malformed JSON → Parser returns fallback intent (action: "idle")
-- Timeout (>10s) → Returns error
-
----
-
-## Feature 8: Action Layer Polling (Layer 7)
-
-**Goal:** Poll for intents and log to console (physical actions in Phase 2)
-
-### Steps:
-1. Create `scripts/layers/layer7_action.js` with polling loop
-2. Implement HTTP GET to `/api/brain/poll?villagerID={id}` every 2 seconds
-3. Parse `IntentPacket` response and execute based on action type
-4. For MVP: Only implement "speak" action as console log
-5. Clear intent from backend after consumption
-
-**Files Created:**
-- `scripts/layers/layer7_action.js`
-
-**Polling Implementation:**
-```javascript
-system.runInterval(() => {
-  const villagers = world.getDimension('overworld').getEntities({ type: 'minecraft:villager_v2' });
-  
-  for (const villager of villagers) {
-    if (!villager.isValid()) continue;
-    
-    const requestID = villager.getDynamicProperty('pending_request_id');
-    if (!requestID) continue;
-    
-    http.get(`http://localhost:3000/api/brain/poll?villagerID=${villager.id}`)
-      .then(response => {
-        const data = JSON.parse(response.body);
-        if (data.status === 'ready') {
-          executeIntent(villager, data.intentPacket);
-          villager.setDynamicProperty('pending_request_id', undefined);
-        }
-      })
-      .catch(err => {
-        console.error('[Layer 7] Polling failed:', err.message);
-      });
-  }
-}, 40); // Every 2 seconds
-```
-
-**MVP Action Execution:**
-```javascript
-function executeIntent(villager, intentPacket) {
-  switch (intentPacket.action) {
-    case 'speak':
-      console.warn(`[Villager ${villager.id}] ${intentPacket.speechText}`);
-      break;
-    case 'idle':
-      console.warn(`[Villager ${villager.id}] [thinking quietly]`);
-      break;
-    default:
-      console.warn(`[Villager ${villager.id}] Unknown action: ${intentPacket.action}`);
-  }
-}
-```
-
-**Validation:**
-- Villager observes player → Eventually logs speech to console
-- Multiple villagers → Each polls independently
-- Backend offline → Polling fails gracefully
-
----
-
-## Feature 9: Working Memory Database Sync
-
-**Goal:** Debounced sync from DynamicProperties to PostgreSQL
-
-### Steps:
-1. Create `nodeDB/routes/memory.js` endpoint: `POST /api/memory/sync`
-2. Implement upsert query for `working_memory` table
-3. Add debounced sync loop in `scripts/layers/layer4_working_memory.js` (every 5 seconds)
-4. Only sync if `wm_needsSync` flag is true
-5. Clear flag after successful sync
-
-**Endpoint Implementation:**
-```javascript
-router.post('/sync', async (req, res) => {
-  const { villagerID, currentMood, lastUpdate } = req.body;
-  
-  try {
-    await pool.query(
-      `INSERT INTO working_memory (villager_id, mood_c, mood_v, mood_i, mood_s, mood_x, last_update)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (villager_id) DO UPDATE SET
-         mood_c = EXCLUDED.mood_c,
-         mood_v = EXCLUDED.mood_v,
-         mood_i = EXCLUDED.mood_i,
-         mood_s = EXCLUDED.mood_s,
-         mood_x = EXCLUDED.mood_x,
-         last_update = EXCLUDED.last_update`,
-      [villagerID, currentMood.C, currentMood.V, currentMood.I, currentMood.S, currentMood.X, lastUpdate]
-    );
-    
-    res.json({ status: 'success' });
-  } catch (err) {
-    logger.error({ error: err.message }, '[Layer 5] Sync failed');
-    res.status(500).json({ status: 'error' });
-  }
-});
-```
-
-**Validation:**
-- DynamicProperties updated → Database syncs within 5 seconds
-- Verify with: `SELECT * FROM working_memory WHERE villager_id = 'test-456';`
-
----
-
-## Feature 10: End-to-End Integration
-
-**Goal:** Complete loop from player action to villager reaction
-
-### Steps:
-1. Integrate all layers into `scripts/main.js` with proper initialization
-2. Add layer-to-layer data flow: Layer 1 → Layer 2 → Layer 3 → Layer 4 → HTTP
-3. Test full pipeline: Place block near villager → Check console for LLM response
-4. Add DEBUG_MODE flag to enable detailed console logging
-5. Verify data persists in PostgreSQL after test
-
-**Integration Test Flow:**
-1. Player places diamond block near villager
-2. Layer 1 detects event (proximity + LOS pass)
-3. Layer 2 calculates vector [C: 0.8, V: 0.9, ...]
-4. Layer 3 accumulates vectors, seals episode after 30s
-5. Layer 4 updates DynamicProperties
-6. HTTP POST sends episode to Layer 5
-7. Layer 5 writes to PostgreSQL
-8. Brain Scheduler queues LLM request
-9. Layer 6 generates intent: "That's a beautiful diamond block!"
-10. Layer 7 polls and logs intent to console
-
-**Validation Checklist:**
-- [ ] Place block → Console shows Layer 1 filter log
-- [ ] Layer 2 vector calculation logs appear
-- [ ] Episode seals after 30 seconds or context shift
-- [ ] Working Memory DynamicProperties updated
-- [ ] Backend logs show HTTP POST from Script API
-- [ ] Database contains new episode row
-- [ ] LLM request queued and processed
-- [ ] Console shows villager's speech output
-- [ ] No errors in Content Log or backend logs
-- [ ] No memory leaks after 10 minutes of testing
-
----
-
-## Known Limitations (MVP Phase)
-
-**Intentional Simplifications:**
-- Only "speak" and "idle" actions (no pathfinding or building yet)
-- Console output only (no in-game UI)
-- Single event type tested (playerPlaceBlock)
-- No instinct fallback (crashes if LLM fails)
-- No rate limiting (LLM can get overwhelmed)
-- No gossip or teaching features
-
-**These will be addressed in Phase 2.**
+1. **T=0s:** Steve places diamond block at (103, 64, 3)
+2. **T=0.01s:** Layer 1 detects event (proximity: 6 blocks, LOS: true)
+3. **T=0.02s:** Layer 2 calculates vector [C: 0.8, V: 0.9, I: 0.3, S: 0.7, X: 0.1]
+4. **T=0.03s:** Layer 3 appends vector to current episode
+5. **T=5s:** Steve places 2 more diamond blocks
+6. **T=10s:** Steve walks away (inactivity timer starts)
+7. **T=40s:** Layer 3 seals episode (seal reason: inactivity)
+   - Episode: 3 vectors, average [C: 0.8, V: 0.9, I: 0.3, S: 0.7, X: 0.1], duration: 40s
+8. **T=40.1s:** Layer 4 updates Working Memory (mood matches episode average)
+9. **T=40.2s:** Layer 5 writes episode to PostgreSQL (HTTP POST)
+10. **T=40.3s:** Backend queues LLM request
+11. **T=42s:** LLM returns: { action: "speak", speechText: "Those diamond blocks look great!" }
+12. **T=44s:** Layer 7 polls and retrieves IntentPacket
+13. **T=44.1s:** Villager displays: `§e[Barrel]: Those diamond blocks look great!`
+14. **Result:** Steve sees villager's response ~44 seconds after first block placed
 
 ---
 
 ## Performance Targets
 
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Layer 1-4 execution time | <5ms per event | Per villager |
-| HTTP POST latency | <150ms | Layer 5 write |
-| LLM inference time | 1-3 seconds | 7B Q4_K_M model |
-| Polling interval | 2 seconds | Layer 7 |
-| Database write time | 10-50ms | Single episode |
+| Layer | Operation | Target Latency | Notes |
+|-------|-----------|---------------|-------|
+| Layer 1 | Event filtering | <2ms | Proximity + LOS check |
+| Layer 2 | Vectorization | <1ms | Lookup + math operations |
+| Layer 3 | Vector append | <0.5ms | Array push + averaging |
+| Layer 4 | DynamicProperties update | <1ms | Single entity write |
+| Layer 5 | Episode write (HTTP + DB) | 50-150ms | Non-blocking |
+| Layer 6 | LLM inference | 2-4s | Async queue processing |
+| Layer 7 | Polling + execution | 5-20ms | GET + ActionBar display |
+| **Total (Fast Gear)** | **<5ms/event** | **Target met** ✅ |
 
 ---
 
-## Testing Strategy
+## Estimated Complexity
 
-### Unit Tests
-- Layer 1: Proximity filter with known coordinates
-- Layer 2: Vector calculation with predefined rules
-- Layer 3: Episode sealing logic with manual triggers
-- Layer 4: DynamicProperties read/write
-
-### Integration Tests
-- Script API → Backend communication
-- Backend → PostgreSQL transactions
-- LLM request → Response parsing
-
-### End-to-End Tests
-- Player places 10 blocks → 1 episode created
-- Episode data matches expectations
-- LLM generates contextually appropriate speech
-
----
-
-## Next Phase Preview
-
-**Phase 2 (Enhancement)** will add:
-- Physical actions: Pathfinding, block placement, animations
-- In-game UI: Interaction Hub, Gossip menu
-- Multiple event types: Chat, damage, container interactions
-- Instinct fallback for network/LLM failures
-- Advanced memory queries: "What did I do yesterday?"
-- Identity tag generation: "loves_building", "fears_explosions"
+**Time Investment:** Moderate (core system implementation)  
+**Technical Difficulty:** High (multi-layer integration)  
+**Dependencies:** Phase 0 complete, PostgreSQL + llama.cpp running  
+**Risk Level:** Medium (network communication, async coordination)
 
 ---
 
 **Document Type:** Phase Plan  
 **Phase:** 1 (MVP)  
 **Status:** Ready for Implementation  
-**Last Updated:** Feb 23, 2026
+**Version:** 1.0  
+**Last Updated:** Feb 24, 2026
