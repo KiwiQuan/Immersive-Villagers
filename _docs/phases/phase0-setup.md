@@ -19,7 +19,7 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
 
 ## Feature 1: PostgreSQL Database Setup
 
-**Deliverable:** Running PostgreSQL instance with base schema tables for episodes, relationships, and working memory.
+**Deliverable:** Running PostgreSQL instance with base schema tables for villagers, episodes, relationships, working memory, and subjective knowledge tracking.
 
 ### Steps
 
@@ -30,15 +30,19 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
    - Grant permissions to user
 
 2. **Create base schema file (`nodeDB/db/schema.sql`)**
-   - Define `episodes` table (villager_id, actor_id, vector_c/v/i/s/x, duration, event_count, seal_reason, timestamp)
-   - Define `relationships` table (villager_id, actor_id, interaction_count, trust_score, last_interaction)
-   - Define `working_memory` table (villager_id, mood_c/v/i/s/x, current_focus, shock_state, last_update)
-   - Define `concepts` table (concept_id, name, vector_signature, discovery_count)
-   - Add indexes on villager_id and timestamp columns
+   - Define `villagers` table (villager_id PRIMARY KEY, name, home_x/y/z, profession, created_at, last_seen, is_active)
+   - Define `concepts` table (concept_id PRIMARY KEY, name, vector_signature, discovery_count)
+   - Define `villager_discoveries` table (villager_id FK, concept_id FK, discovered_at, discovery_method)
+   - Define `episodes` table (villager_id FK, actor_id, vector_c/v/i/s/x, duration, event_count, seal_reason, timestamp)
+   - Define `relationships` table (villager_id FK, actor_id, interaction_count, trust_score, last_interaction)
+   - Define `working_memory` table (villager_id FK PRIMARY KEY, mood_c/v/i/s/x, current_focus, shock_state, last_update)
+   - Add indexes on villager_id, timestamp, and foreign key columns
+   - Add ON DELETE CASCADE for all foreign keys
 
 3. **Apply schema to database**
-   - Run schema.sql using psql command
-   - Verify tables exist with `\dt` command
+   - Run schema.sql using psql command: `psql -U minecraft_ai -d villager_memory -f schema.sql`
+   - Verify tables exist with `\dt` command (should show 6 tables)
+   - Verify foreign keys with `\d episodes` (should show REFERENCES villagers)
    - Test INSERT/SELECT operations manually
 
 4. **Create pg-pool configuration (`nodeDB/db/pool.js`)**
@@ -49,9 +53,104 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
 
 5. **Test database connectivity**
    - Write simple Node.js script to connect to pool
-   - Execute test INSERT into episodes table
-   - Execute test SELECT to verify data
+   - Execute test INSERT into villagers table (must insert villager before episodes)
+   - Execute test INSERT into episodes table with valid villager_id
+   - Execute test SELECT with JOIN to verify foreign key relationships
    - Verify connection pooling works (multiple concurrent queries)
+
+### Schema Reference (`nodeDB/db/schema.sql`)
+
+```sql
+-- Core villager identity table
+CREATE TABLE villagers (
+  villager_id TEXT PRIMARY KEY,
+  name TEXT,
+  home_x REAL NOT NULL,
+  home_y REAL NOT NULL,
+  home_z REAL NOT NULL,
+  profession TEXT,
+  created_at BIGINT NOT NULL,
+  last_seen BIGINT,
+  is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Concept definitions (shared knowledge pool)
+CREATE TABLE concepts (
+  concept_id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  vector_c REAL NOT NULL,
+  vector_v REAL NOT NULL,
+  vector_i REAL NOT NULL,
+  vector_s REAL NOT NULL,
+  vector_x REAL NOT NULL,
+  discovery_count INTEGER DEFAULT 0
+);
+
+-- Subjective knowledge: tracks what each villager has learned
+CREATE TABLE villager_discoveries (
+  villager_id TEXT REFERENCES villagers(villager_id) ON DELETE CASCADE,
+  concept_id INTEGER REFERENCES concepts(concept_id) ON DELETE CASCADE,
+  discovered_at BIGINT NOT NULL,
+  discovery_method TEXT,  -- 'witnessed', 'gossip', 'taught'
+  PRIMARY KEY (villager_id, concept_id)
+);
+
+-- Episode storage: recorded memories
+CREATE TABLE episodes (
+  id SERIAL PRIMARY KEY,
+  villager_id TEXT NOT NULL REFERENCES villagers(villager_id) ON DELETE CASCADE,
+  actor_id TEXT NOT NULL,
+  vector_c REAL NOT NULL,
+  vector_v REAL NOT NULL,
+  vector_i REAL NOT NULL,
+  vector_s REAL NOT NULL,
+  vector_x REAL NOT NULL,
+  duration INTEGER,
+  event_count INTEGER,
+  seal_reason TEXT,
+  timestamp BIGINT NOT NULL
+);
+
+-- Relationship tracking: trust scores per player
+CREATE TABLE relationships (
+  id SERIAL PRIMARY KEY,
+  villager_id TEXT NOT NULL REFERENCES villagers(villager_id) ON DELETE CASCADE,
+  actor_id TEXT NOT NULL,
+  interaction_count INTEGER DEFAULT 0,
+  trust_score REAL DEFAULT 0.5,
+  last_interaction BIGINT,
+  UNIQUE(villager_id, actor_id)
+);
+
+-- Working memory snapshot (synced from DynamicProperties)
+CREATE TABLE working_memory (
+  villager_id TEXT PRIMARY KEY REFERENCES villagers(villager_id) ON DELETE CASCADE,
+  mood_c REAL NOT NULL,
+  mood_v REAL NOT NULL,
+  mood_i REAL NOT NULL,
+  mood_s REAL NOT NULL,
+  mood_x REAL NOT NULL,
+  current_focus TEXT,
+  shock_state BOOLEAN DEFAULT FALSE,
+  last_update BIGINT NOT NULL
+);
+
+-- Indexes for performance
+CREATE INDEX idx_villagers_active ON villagers(is_active) WHERE is_active = TRUE;
+CREATE INDEX idx_episodes_villager ON episodes(villager_id, timestamp DESC);
+CREATE INDEX idx_episodes_actor ON episodes(actor_id, timestamp DESC);
+CREATE INDEX idx_relationships_villager ON relationships(villager_id);
+CREATE INDEX idx_relationships_actor ON relationships(actor_id);
+CREATE INDEX idx_discoveries_villager ON villager_discoveries(villager_id);
+CREATE INDEX idx_discoveries_concept ON villager_discoveries(concept_id);
+```
+
+**Key Design Decisions:**
+- `villagers` table is the central registry for all villager entities
+- Foreign keys use `ON DELETE CASCADE` to auto-clean data when villagers despawn
+- `villager_discoveries` enforces subjectivity (villagers only know what they've learned)
+- `concepts` stores the shared knowledge pool, but access is gated by `villager_discoveries`
+- Indexes optimize common queries (episode history, relationship lookups)
 
 ---
 
@@ -248,6 +347,9 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
 ## Testing Checklist
 
 - [ ] PostgreSQL accepts connections and returns query results
+- [ ] All 6 tables created successfully (villagers, concepts, villager_discoveries, episodes, relationships, working_memory)
+- [ ] Foreign key constraints work (cannot insert episode without villager)
+- [ ] ON DELETE CASCADE works (deleting villager removes related data)
 - [ ] Node.js backend responds to /api/health with 200 status
 - [ ] llama.cpp generates completions for test prompts
 - [ ] Script API can POST data to backend successfully
@@ -268,6 +370,8 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
 - Backend routes return mock data only
 - LLM is not integrated with game logic
 - No villager actions or behaviors are triggered
+- Villagers table exists but is empty (no villager registration yet)
+- Villager_discoveries table exists but unused (concept learning in Phase 1+)
 - System is infrastructure-only, not playable
 
 ---

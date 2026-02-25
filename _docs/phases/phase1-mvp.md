@@ -136,35 +136,42 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ## Feature 4: Layer 4 (Working Memory Management)
 
-**Deliverable:** Real-time Working Memory updates in DynamicProperties with debounced PostgreSQL sync.
+**Deliverable:** Real-time Working Memory updates in DynamicProperties with debounced PostgreSQL sync, including villager registration.
 
 ### Steps
 
-1. **Implement Working Memory update (`scripts/layers/layer4_working_memory.js`)**
+1. **Implement villager registration (`scripts/layers/layer4_working_memory.js`)**
+   - Create registerVillager(villagerEntity) function
+   - Extract villager location, profession, and entity ID
+   - Send HTTP POST to /api/villagers/register with villager data
+   - Only register if villager is AI-tagged and not already registered
+   - Run registration check on world load for all AI villagers
+
+2. **Implement Working Memory update**
    - Receive EpisodeSummary from Layer 3
    - Update villager's currentMood to match vectorAverage
    - Update currentFocus to actorID from episode
    - Set shockState if episode has high Intensity (I > 0.8)
 
-2. **Write to DynamicProperties**
+3. **Write to DynamicProperties**
    - Use setWorkingMemory() helper to write all WM properties
    - Set wm_needsSync flag to true
    - Update wm_lastUpdate timestamp
    - Verify entity.isValid() before writing
 
-3. **Create debounced sync loop**
+4. **Create debounced sync loop**
    - Run system.runInterval every 100 ticks (5 seconds)
    - For each villager, check wm_needsSync flag
    - If true, send HTTP POST to /api/memory/sync with Working Memory state
    - Clear wm_needsSync only after successful response
 
-4. **Handle sync failures**
+5. **Handle sync failures**
    - Catch network errors and retry on next interval
    - Track consecutive failures in wm_syncFailureCount
    - After 3 failures, log error and set wm_networkStatus to "offline"
    - Retry connection check every 60 seconds
 
-5. **Output ActiveAttentionState to Layer 5**
+6. **Output ActiveAttentionState to Layer 5**
    - Create packet with villagerID, currentMood, currentFocus, shockState
    - Send via HTTP POST (non-blocking)
    - Log sync success/failure if DEBUG_MODE enabled
@@ -174,35 +181,41 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ## Feature 5: Layer 5 (Episode Storage)
 
-**Deliverable:** Backend endpoints that write episodes and Working Memory to PostgreSQL.
+**Deliverable:** Backend endpoints that write episodes, register villagers, and sync Working Memory to PostgreSQL.
 
 ### Steps
 
-1. **Create episode write endpoint (`nodeDB/routes/memory.js`)**
+1. **Create villager registration endpoint (`nodeDB/routes/memory.js`)**
+   - POST /api/villagers/register accepts villager data (villagerID, home coordinates, profession)
+   - Check if villager already exists (idempotent operation)
+   - INSERT into villagers table with created_at timestamp
+   - Return success status and villagerID
+
+2. **Create episode write endpoint**
    - POST /api/memory/episode accepts EpisodeSummary
-   - Validate villagerID and episodeSummary structure
+   - Validate villagerID exists in villagers table (FK constraint)
    - Call writeEpisode() query function
    - Return episodeID and timestamp in response
 
-2. **Create episode write query (`nodeDB/queries/episodes.js`)**
+3. **Create episode write query (`nodeDB/queries/episodes.js`)**
    - Connect to pool and start transaction
    - INSERT episode data into episodes table
-   - UPDATE relationships table (increment interaction_count)
+   - UPDATE relationships table (increment interaction_count, initialize if new)
    - COMMIT transaction and return result
 
-3. **Create Working Memory sync endpoint**
+4. **Create Working Memory sync endpoint**
    - POST /api/memory/sync accepts Working Memory state
    - Use UPSERT logic (INSERT ... ON CONFLICT DO UPDATE)
    - Update working_memory table with latest mood values
    - Return success status
 
-4. **Create concepts lookup endpoint**
+5. **Create concepts lookup endpoint**
    - GET /api/memory/concepts returns all known concepts
    - Return concept_id, name, and vector_signature for matching
    - Cache results in memory for fast lookups (refresh every 60s)
    - Add pagination support (limit + offset)
 
-5. **Add request validation middleware (`nodeDB/middleware/validate.js`)**
+6. **Add request validation middleware (`nodeDB/middleware/validate.js`)**
    - Check villagerID is present and valid string
    - Check episodeSummary has vectorAverage object
    - Validate vector values are numbers in range [-1, 1]
@@ -326,6 +339,7 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ## Testing Checklist
 
+- [ ] Villagers register in database on first initialization (villagers table)
 - [ ] Layer 1 filters events by proximity (ignores events >32 blocks)
 - [ ] Layer 1 filters events by Line of Sight (ignores occluded events)
 - [ ] Layer 2 calculates accurate [C, V, I, S, X] vectors for common blocks
@@ -333,11 +347,13 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 - [ ] Layer 3 matches episodes to known concepts in database
 - [ ] Layer 4 updates Working Memory in DynamicProperties
 - [ ] Layer 4 syncs to PostgreSQL every 5 seconds
-- [ ] Layer 5 writes episodes to database successfully
+- [ ] Layer 5 writes episodes to database successfully (foreign key to villagers)
+- [ ] Layer 5 initializes relationships table entries on first interaction
 - [ ] Layer 6 generates valid IntentPackets with speak/idle actions
 - [ ] Layer 7 executes speak actions via ActionBar
 - [ ] Complete loop takes 2-10 seconds from event to response
 - [ ] Multiple villagers can operate simultaneously without conflicts
+- [ ] Foreign key constraints prevent orphaned episodes
 - [ ] System handles network errors gracefully (no crashes)
 - [ ] DEBUG_MODE shows full data flow in console logs
 
@@ -353,6 +369,7 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 - LLM context is minimal (last 3 episodes only, no personality)
 - No gossip system (villagers don't share knowledge)
 - No concept teaching (LLM can't label unknown patterns yet)
+- Villager_discoveries table exists but unused (concept learning in Phase 2)
 
 ---
 
@@ -423,6 +440,8 @@ Immersive_Villagers BP/
 
 ### Setup
 - Villager "Barrel" spawned at (100, 64, 0)
+- Barrel registered in villagers table (villagerID, home coordinates stored)
+- Barrel's Working Memory initialized in DynamicProperties
 - Player "Steve" at (105, 64, 5) — 6 blocks away
 - Backend and LLM running, DEBUG_MODE enabled
 

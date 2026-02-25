@@ -173,13 +173,14 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ## Feature 5: Advanced Episode Sealing & LLM Labeling
 
-**Deliverable:** Layer 3 uses LLM to label unknown episode patterns as new concepts.
+**Deliverable:** Layer 3 uses LLM to label unknown episode patterns as new concepts, with subjective discovery tracking.
 
 ### Steps
 
 1. **Enhance concept matching in Layer 3**
    - Calculate Euclidean distance between vectorAverage and all known concepts
-   - If best match distance > 0.2, mark episode as "unknown"
+   - Check if villager has discovered this concept (query villager_discoveries table)
+   - If best match distance > 0.2 OR villager hasn't discovered it, mark as "unknown"
    - Send HTTP POST to /api/brain/label-concept with episode details
    - Store requestID and wait for LLM labeling
 
@@ -193,20 +194,22 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
    - Process concept labeling requests before standard intents
    - LLM returns concept name (e.g., "Mining", "Building House")
    - Validate name (alphanumeric, 2-20 characters)
-   - Store new concept in concepts table
+   - Store new concept in concepts table (if doesn't exist)
 
-4. **Update episode with concept_id**
-   - After concept is labeled, UPDATE episode record in PostgreSQL
-   - Set concept_id and concept_name fields
-   - Add concept to villager's discovery list (subjective knowledge)
+4. **Update episode and track discovery**
+   - After concept is labeled, UPDATE episode record with concept_id
+   - INSERT into villager_discoveries (villagerID, conceptID, discovered_at, 'witnessed')
+   - This enforces subjectivity: only this villager knows this concept now
    - Return confirmation to Script API
 
-5. **Test concept learning**
-   - Perform novel activity (e.g., dig pattern in ground)
+5. **Test concept learning and subjectivity**
+   - Villager A observes novel activity (dig pattern)
    - Verify Layer 3 detects unknown pattern
-   - Wait for LLM to label concept
-   - Check PostgreSQL for new concept entry
-   - Repeat activity and verify concept is now recognized
+   - LLM labels it as "Digging Pattern"
+   - Verify villager_discoveries has entry for Villager A
+   - Villager B observes same activity
+   - Verify Villager B also learns it independently (separate discovery entry)
+   - Check that both villagers can now recognize the pattern
 
 ---
 
@@ -296,10 +299,13 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 - [ ] Stare action locks villager's head rotation on target
 - [ ] Flee action moves villagers away from threats
 - [ ] Unknown episodes trigger LLM concept labeling
-- [ ] Labeled concepts are stored and recognized in future episodes
+- [ ] Labeled concepts are stored in concepts table
+- [ ] Villager discoveries tracked in villager_discoveries table (subjectivity enforced)
+- [ ] Villagers only recognize concepts they've personally discovered
+- [ ] Multiple villagers can discover same concept independently
 - [ ] Priority queue processes high-priority requests first
 - [ ] Request batching works for multi-villager observations
-- [ ] Batched concepts are shared among all observers
+- [ ] Batched concepts are shared among all observers (all get discovery entries)
 - [ ] Network failures don't crash villagers (graceful degradation)
 - [ ] Performance targets maintained (<5ms Fast Gear per event)
 
