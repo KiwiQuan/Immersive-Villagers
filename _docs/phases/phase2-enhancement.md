@@ -401,24 +401,27 @@ Immersive_Villagers BP/
 
 #### Scenario A: High-Trust Player Builds
 
-1. **T=0s:** Steve places redstone dust near Barrel
-2. **Layer 2:** Calculates [C: 0.7, V: 0.5, I: 0.2, S: 0.8, X: 0.9]
-3. **Layer 3:** Matches to "Redstone Building" concept (known)
-4. **Layer 5:** Updates trust score (0.8 → 0.82 due to high S)
-5. **Layer 6:** LLM prompt includes: "You trust Steve highly. He's building with redstone."
+1. **T=0s:** Steve places redstone dust 5 blocks from Barrel's home
+2. **Layer 2:** Calculates [C: 0.7, V: 0.75, I: 0.3, S: 0.1, X: 0.9]
+   - Base: constructive (+0.7), redstone value (0.5), slow (I:0.2), solo activity (S:0.1), complex (X:0.9)
+   - Near home multiplier: V:0.75 (0.5 × 1.5), I:0.3 (0.2 × 1.5)
+3. **Layer 3:** Matches to "Redstone Building" concept (known from previous discovery)
+4. **Layer 5:** Trust score stable at 0.8 (solo activity doesn't strongly affect trust)
+5. **Layer 6:** LLM prompt includes: "You trust Steve highly (0.8). He's building complex redstone near you."
 6. **LLM Response:** { action: "stare", speechText: "Ooh, redstone! What are you making?" }
 7. **Layer 7:** Villager locks head rotation on Steve and speaks
-8. **Result:** Barrel watches Steve with friendly curiosity
+8. **Result:** Barrel watches Steve with friendly curiosity (trust enables positive interpretation)
 
-#### Scenario B: Low-Trust Player Destroys
+#### Scenario B: Low-Trust Player Attacks Directly
 
-1. **T=0s:** Alex breaks Barrel's workstation (anvil)
-2. **Layer 2:** Calculates [C: -0.9, V: 0.8, I: 0.6, S: -0.9, X: 0.2]
-3. **Layer 5:** Updates trust score (0.3 → 0.1 due to negative S)
-4. **Layer 6:** LLM prompt includes: "You barely know Alex. They destroyed your anvil!"
-5. **LLM Response:** { action: "flee", speechText: "Hey! That was mine!" }
-6. **Layer 7:** Villager shouts and runs 20 blocks away
-7. **Result:** Barrel exhibits defensive behavior toward untrusted player
+1. **T=0s:** Alex attacks Barrel directly (entityHurt event)
+2. **Layer 2:** Calculates [C: -0.9, V: 0.0, I: 0.9, S: -0.9, X: 0.0]
+   - Attack is highly destructive (C:-0.9), no value, very intense (I:0.9), directly hostile (S:-0.9), not complex
+3. **Layer 5:** Updates trust score (0.3 → 0.0 due to highly negative S)
+4. **Layer 6:** LLM prompt includes: "Alex just attacked you! You barely know them (trust: 0.0)."
+5. **LLM Response:** { action: "flee", speechText: "Hey! Why did you do that?!" }
+6. **Layer 7:** Villager shouts and runs 20 blocks away, sets shockState
+7. **Result:** Barrel exhibits defensive behavior toward hostile player
 
 #### Scenario C: Multi-Villager Batching
 

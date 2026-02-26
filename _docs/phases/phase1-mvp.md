@@ -65,30 +65,45 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 1. **Create vector rules lookup (`scripts/config/vector_rules.js`)**
    - Define base C values for block place (+0.8) and break (-0.6)
-   - Define V values for common blocks (diamond: 0.9, dirt: 0.1, etc.)
-   - Define I values for event types (explosion: 0.9, slow place: 0.2)
-   - Define X values for logic blocks (redstone: 0.8, dirt: 0.1)
+   - Define V values for common blocks (diamond: 0.9, dirt: 0.1, ore: 0.6-0.8, etc.)
+   - Define I values for event types (explosion: 0.9, damage: 0.8, slow place: 0.2)
+   - Define S values for interaction types (IMPORTANT: based on TYPE, not location):
+     - Direct social: chat (+0.8), trade (+0.9), giveItem (+0.7)
+     - Solo constructive: placeBlock (+0.1), craft (+0.1)
+     - Solo destructive: breakBlock (-0.1), mining (-0.05)
+     - Hostile: attack (-0.9), steal (-0.8), griefing (-0.7)
+   - Define X values for logic blocks (redstone: 0.8, comparator: 0.9, dirt: 0.1)
+   - NOTE: Home proximity modifies I and V (1.5x multiplier), NOT S
 
 2. **Implement vectorization logic (`scripts/layers/layer2_vectorizer.js`)**
    - Create calculateVector(eventContext) function
    - Extract C from event type (place vs. break)
    - Extract V from block type (lookup in vector_rules)
    - Extract I from event intensity (damage amount, speed)
-   - Calculate S and X based on context and block type
+   - Calculate S and X based on interaction type and block complexity
 
-3. **Add Sociality (S) calculation**
-   - Check if event occurred in villager's home territory (25-block radius from spawn)
-   - Positive S for building near home, negative S for destroying
-   - High S for direct interaction (chat, trade), low S for distant actions
-   - Adjust S based on trust score (if available)
+3. **Add Sociality (S) calculation (Pure Social Intent)**
+   - S represents inherent social nature of the interaction TYPE, not location
+   - High S (+0.7 to +0.9): Direct social actions (chat, trade, giveItem, collaborate)
+   - Neutral S (-0.2 to +0.2): Solo activities (placeBlock: +0.1, breakBlock: -0.1, mining: 0)
+   - Negative S (-0.7 to -0.9): Hostile actions (attack, steal, griefing)
+   - Location does NOT define S; a player breaking blocks alone is "solo work" regardless of proximity
 
-4. **Create SemanticVector output packet**
+4. **Add Territory Proximity Multiplier (Home as Context)**
+   - Check if event occurred within villager's home territory (25-block radius from home_x/y/z)
+   - If near home: Apply 1.5x multiplier to Intensity (I) and Value (V)
+   - Reasoning: Events near home feel MORE intense and MORE important, not more/less social
+   - Example: Breaking dirt far away (I:0.2, V:0.1) vs. near home (I:0.3, V:0.15)
+   - Hostile events (S < 0) near home feel more threatening due to higher I, not different S
+
+5. **Create SemanticVector output packet**
    - Package vector { C, V, I, S, X } with metadata
    - Include rawEvent, blockType, actorID, villagerID, timestamp
+   - Include isNearHome flag in metadata for debugging
    - Validate vector values are in range [-1, 1]
    - Add debugLog() call for DEBUG_MODE
 
-5. **Output SemanticVector to Layer 3**
+6. **Output SemanticVector to Layer 3**
    - Pass vector packet to Layer 3 sequencer
    - Log vector to console if DEBUG_MODE enabled
    - Track vector count for performance monitoring
@@ -447,14 +462,16 @@ Immersive_Villagers BP/
 
 ### Interaction Flow
 
-1. **T=0s:** Steve places diamond block at (103, 64, 3)
+1. **T=0s:** Steve places diamond block at (103, 64, 3) — 4 blocks from Barrel's home
 2. **T=0.01s:** Layer 1 detects event (proximity: 6 blocks, LOS: true)
-3. **T=0.02s:** Layer 2 calculates vector [C: 0.8, V: 0.9, I: 0.3, S: 0.7, X: 0.1]
+3. **T=0.02s:** Layer 2 calculates vector [C: 0.8, V: 1.0, I: 0.45, S: 0.1, X: 0.1]
+   - Base: placeBlock (C:+0.8), diamond (V:0.9), slow placement (I:0.3), solo activity (S:+0.1), simple block (X:0.1)
+   - Near home multiplier: V and I × 1.5 → V:1.0 (capped), I:0.45
 4. **T=0.03s:** Layer 3 appends vector to current episode
-5. **T=5s:** Steve places 2 more diamond blocks
+5. **T=5s:** Steve places 2 more diamond blocks (similar vectors)
 6. **T=10s:** Steve walks away (inactivity timer starts)
 7. **T=40s:** Layer 3 seals episode (seal reason: inactivity)
-   - Episode: 3 vectors, average [C: 0.8, V: 0.9, I: 0.3, S: 0.7, X: 0.1], duration: 40s
+   - Episode: 3 vectors, average [C: 0.8, V: 1.0, I: 0.45, S: 0.1, X: 0.1], duration: 40s
 8. **T=40.1s:** Layer 4 updates Working Memory (mood matches episode average)
 9. **T=40.2s:** Layer 5 writes episode to PostgreSQL (HTTP POST)
 10. **T=40.3s:** Backend queues LLM request
