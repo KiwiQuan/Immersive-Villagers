@@ -25,31 +25,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Create hub menu (`scripts/ui/hub.js`)**
+- [ ] **1. Create hub menu (`scripts/ui/hub.js`)**
   - Build ActionFormData with villager name and ID in title
   - Display dynamic greeting based on trust score and mood
   - Show current mood vector (collapsed view)
   - Add buttons: Gossip & Whisper, View Memories, Relationship Status, Leave
 
-- [ ] **Implement entity interaction trigger**
+- [ ] **2. Implement entity interaction trigger**
   - Subscribe to playerInteractWithEntity event
   - Check if entity is AI-tagged villager
   - Verify backend is online via /api/health check
   - Open hub menu if checks pass
 
-- [ ] **Add proximity monitoring**
+- [ ] **3. Add proximity monitoring**
   - Start interval loop when menu opens
   - Check distance between player and villager every 10 ticks
   - Auto-close menu if distance > 10 blocks
   - Display message: "You walked too far from [Villager]"
 
-- [ ] **Create menu helpers (`scripts/ui/helpers.js`)**
+- [ ] **4. Create menu helpers (`scripts/ui/helpers.js`)**
   - buildMenuTitle(title, villagerName, villagerID)
   - formatTimestamp(timestamp) → "5 minutes ago"
   - buildMoodDisplay(vector, showLabels) → formatted [C,V,I,S,X]
   - Export helper functions
 
-- [ ] **Test hub menu**
+- [ ] **5. Test hub menu**
   - Interact with villager in-game
   - Verify menu opens with correct data
   - Test navigation buttons
@@ -63,31 +63,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Create gossip menu (`scripts/ui/gossip.js`)**
+- [ ] **1. Create gossip menu (`scripts/ui/gossip.js`)**
   - Fetch last 5 episodes from backend (GET /api/memory/gossip)
   - Display episode summaries with timestamps
   - Add buttons: Whisper, Refresh Gossip, View Full Log, Back
   - Show loading state while fetching data
 
-- [ ] **Implement whisper input modal**
+- [ ] **2. Implement whisper input modal**
   - Create ModalFormData with text field (256 char limit)
   - Add input sanitization (remove control chars, check profanity)
   - Send whisper to backend as special event (POST /api/memory/whisper)
   - Show optimistic feedback: "Whisper sent! Villager is thinking..."
 
-- [ ] **Add whisper processing in backend**
+- [ ] **3. Add whisper processing in backend**
   - Create /api/memory/whisper endpoint
   - Convert whisper text to semantic vector (high S, medium X)
   - Create episode with single vector (whisper event)
   - Queue LLM request to generate verbal response
 
-- [ ] **Implement async feedback for whispers**
+- [ ] **4. Implement async feedback for whispers**
   - Poll /api/brain/poll every 2 seconds (max 10 attempts)
   - Display loading states during polling
   - Show villager's response via ActionBar when ready
   - Fallback to "..." if LLM times out
 
-- [ ] **Test gossip & whisper**
+- [ ] **5. Test gossip & whisper**
   - Open gossip menu and verify memories load
   - Send whisper: "Do you like diamonds?"
   - Wait for villager response (2-5 seconds)
@@ -101,31 +101,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Create debug modal (`scripts/ui/debug.js`)**
+- [ ] **1. Create debug modal (`scripts/ui/debug.js`)**
   - Show Working Memory state (focus, mood, shock, last update)
   - Show current episode (if open) with vector count and average
   - Add buttons: View Live Vectors, Seal Episode, Clear Memory, Force LLM, etc.
   - Restrict access to admins (check player.hasTag('admin'))
 
-- [ ] **Implement live vector stream**
+- [ ] **2. Implement live vector stream**
   - Fetch last 10 vectors from Layer 2 (stored in temp buffer)
   - Display in scrollable MessageFormData
   - Auto-refresh every 2 seconds
   - Show raw event name, vector values, timestamp
 
-- [ ] **Add CRUD operations**
+- [ ] **3. Add CRUD operations**
   - Clear Working Memory: Reset all DynamicProperties to defaults
   - Seal Episode: Force Layer 3 to seal current episode immediately
   - Force LLM Request: Manually queue high-priority LLM inference
   - Edit Relationship Score: Modal input to set trust score manually
 
-- [ ] **Create debug endpoints in backend**
+- [ ] **4. Create debug endpoints in backend**
   - POST /api/debug/clear-memory: Delete episodes for villagerID
   - POST /api/debug/reset-relationship: Reset trust score to 0.5
   - GET /api/debug/queue-status: Return Brain Scheduler queue state
   - POST /api/debug/force-sync: Bypass debounce, sync WM immediately
 
-- [ ] **Test debug tools**
+- [ ] **5. Test debug tools**
   - Enable DEBUG_MODE in-game
   - Open debug dashboard
   - Force LLM request and verify response
@@ -140,31 +140,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Add Tier B buffer to Layer 3 Sequencer**
+- [ ] **1. Add Tier B buffer to Layer 3 Sequencer**
   - Maintain chronological list of sealed Sub-Concept labels
   - Track last 10 minutes of Sub-Concepts per villager
   - Example: ["Mining", "Falling", "Chatting", "Mining", "Falling"]
   - Store in DynamicProperty as JSON string (tier_b_buffer)
 
-- [ ] **Implement pattern detection algorithm**
+- [ ] **2. Implement pattern detection algorithm**
   - Search buffer for repeating sequences (3+ repetitions)
   - Use simple substring matching or sliding window
   - If pattern found (e.g., ["Mining", "Falling"] repeats 3 times), flag Macro-Concept
   - Send pattern to LLM for naming
 
-- [ ] **Create Macro-Concept labeling**
+- [ ] **3. Create Macro-Concept labeling**
   - POST /api/brain/label-macro with pattern sequence
   - LLM prompt: "This sequence repeated: [Mining, Falling, Mining, Falling]. What game is this?"
   - LLM returns name (e.g., "Spleef")
   - Store Macro-Concept in concepts table with pattern signature
 
-- [ ] **Add Macro-Concept recognition**
+- [ ] **4. Add Macro-Concept recognition**
   - When same pattern appears again, match against known Macro-Concepts
   - Tag episode with macro_concept_id
   - Include in LLM context: "You're playing Spleef with Steve"
   - Villager responses reflect understanding of game
 
-- [ ] **Test Macro-Concept detection**
+- [ ] **5. Test Macro-Concept detection**
   - Play Spleef with villager watching (mine, fall, repeat 3x)
   - Verify Layer 3 detects repeating pattern
   - Wait for LLM to name it "Spleef"
@@ -179,31 +179,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Add gossip table to database schema**
+- [ ] **1. Add gossip table to database schema**
   - CREATE TABLE gossip (gossip_id, speaker_id, listener_id, concept_id, timestamp)
   - Create indexes on speaker_id and listener_id
   - Add foreign key to concepts table
   - Migrate existing database
 
-- [ ] **Create gossip endpoints (`nodeDB/routes/memory.js`)**
+- [ ] **2. Create gossip endpoints (`nodeDB/routes/memory.js`)**
   - POST /api/memory/gossip/share: Speaker shares concept with listener
   - GET /api/memory/gossip/received?villagerID=X: Fetch gossip heard by villager
   - Include gossip in LLM context ("You heard from Bob: 'Steve plays Spleef'")
   - Validate both villagers exist and are within chat range
 
-- [ ] **Add autonomous gossip triggers**
+- [ ] **3. Add autonomous gossip triggers**
   - When villager learns new concept, 30% chance to gossip to nearby villagers
   - Find villagers within 10-block radius
   - Send HTTP POST to share concept with each
   - Write gossip records to database
 
-- [ ] **Implement gossip in LLM prompts**
+- [ ] **4. Implement gossip in LLM prompts**
   - Fetch gossip received by villager from database
   - Add section in prompt: "You heard from others: [gossip summaries]"
   - Villager can reference gossip in responses
   - Example: "I heard Bob mention you're good at building!"
 
-- [ ] **Test gossip propagation**
+- [ ] **5. Test gossip propagation**
   - Teach concept to Villager A (play Spleef near A)
   - Wait for A to gossip to nearby Villager B
   - Trigger event near B (start playing Spleef)
@@ -217,31 +217,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Add conversation tracking to Working Memory**
+- [ ] **1. Add conversation tracking to Working Memory**
   - Store last 3 whispers in DynamicProperty (wm_recent_chat)
   - Include speaker ID, message text, timestamp
   - Serialize as JSON string (limit to 1KB)
   - Clear after 5 minutes of inactivity
 
-- [ ] **Include conversation history in LLM prompts**
+- [ ] **2. Include conversation history in LLM prompts**
   - Fetch wm_recent_chat from DynamicProperties
   - Add section in prompt: "Recent conversation: [chat history]"
   - LLM maintains context across turns
   - Example: Player asks "What do you think?" → Villager references previous topic
 
-- [ ] **Implement chat threading**
+- [ ] **3. Implement chat threading**
   - Track conversation_id for related whispers
   - Store in conversations table in PostgreSQL
   - Link episodes to conversation_id if chat-triggered
   - Query conversations when building LLM prompt
 
-- [ ] **Add conversation timeout**
+- [ ] **4. Add conversation timeout**
   - If 5 minutes pass with no whispers, clear wm_recent_chat
   - Start new conversation_id on next whisper
   - Log conversation boundaries if DEBUG_MODE enabled
   - Prevent memory bloat from stale conversations
 
-- [ ] **Test multi-turn dialogue**
+- [ ] **5. Test multi-turn dialogue**
   - Whisper: "Do you like diamonds?"
   - Wait for response
   - Whisper: "Why do you like them?"
@@ -255,32 +255,32 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Create instinct module (`scripts/layers/layer8_instinct.js`)**
+- [ ] **1. Create instinct module (`scripts/layers/layer8_instinct.js`)**
   - Define hardcoded behavior rules based on Working Memory
   - High trust + low intensity → friendly idle
   - Low trust + high intensity → flee or defensive
   - Shock state → flee immediately
   - No focus → wander randomly
 
-- [ ] **Implement fallback triggers**
+- [ ] **2. Implement fallback triggers**
   - In Layer 7, track consecutive polling failures
   - After 3 failures (6 seconds), switch to instinct mode
   - Set wm_usingInstinct flag to true
   - Continue checking backend every 60 seconds
 
-- [ ] **Add instinct action selection**
+- [ ] **3. Add instinct action selection**
   - getInstinctAction(villagerEntity, workingMemory, relationshipScore)
   - Use simple if/else rules (no LLM needed)
   - Return IntentPacket with basic action
   - Log instinct activation if DEBUG_MODE enabled
 
-- [ ] **Implement instinct recovery**
+- [ ] **4. Implement instinct recovery**
   - When backend comes back online, clear wm_usingInstinct flag
   - Resume normal LLM-driven behavior
   - Log recovery event
   - Smoothly transition (finish current instinct action first)
 
-- [ ] **Test instinct fallback**
+- [ ] **5. Test instinct fallback**
   - Stop backend server during gameplay
   - Verify villagers switch to instinct after 6 seconds
   - Observe fallback behaviors (flee, idle, etc.)
@@ -294,31 +294,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Optimize Layer 1 event filtering**
+- [ ] **1. Optimize Layer 1 event filtering**
   - Cache villager positions for 5 ticks (reduce getEntities calls)
   - Use spatial partitioning (chunk-based villager lookup)
   - Skip LOS checks for distant events (proximity > 20 blocks)
   - Batch process events (handle all events in single tick)
 
-- [ ] **Optimize PostgreSQL queries**
+- [ ] **2. Optimize PostgreSQL queries**
   - Add database indexes on frequently queried columns
   - Use prepared statements for all queries (pg-pool caching)
   - Batch relationship updates (1 UPDATE per 5 episodes)
   - Use connection pooling efficiently (release immediately)
 
-- [ ] **Optimize Brain Scheduler**
+- [ ] **3. Optimize Brain Scheduler**
   - Add request deduplication (ignore duplicate requests within 5s)
   - Limit queue size to 50 requests (drop low-priority if exceeded)
   - Prune stale requests (older than 30s) from queue
   - Track queue metrics (average wait time, throughput)
 
-- [ ] **Add performance monitoring**
+- [ ] **4. Add performance monitoring**
   - Track tick time for Fast Gear (target <5ms)
   - Track HTTP request latency (target <100ms for Layer 5)
   - Track LLM inference time (target <5s)
   - Log performance metrics to Pino
 
-- [ ] **Load test with multiple villagers**
+- [ ] **5. Load test with multiple villagers**
   - Spawn 20 villagers in close proximity
   - Trigger events that all villagers observe
   - Monitor server TPS (should stay at 20)
@@ -332,31 +332,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Add error monitoring to backend**
+- [ ] **1. Add error monitoring to backend**
   - Track failed database queries (count, error types)
   - Track failed LLM calls (timeout, malformed response)
   - Track HTTP request errors (timeout, connection refused)
   - Log all errors with context to Pino
 
-- [ ] **Implement automatic recovery**
+- [ ] **2. Implement automatic recovery**
   - Retry failed database queries (max 3 attempts)
   - Retry failed HTTP requests (exponential backoff)
   - Restart llama.cpp if health check fails
   - Alert admins via in-game message for critical failures
 
-- [ ] **Add graceful degradation paths**
+- [ ] **3. Add graceful degradation paths**
   - Backend offline → Use Working Memory only (DynamicProperties)
   - LLM offline → Use instinct fallback
   - PostgreSQL offline → Queue writes in memory, flush when reconnected
   - Network timeout → Skip operation, log error, continue
 
-- [ ] **Create error logging dashboard**
+- [ ] **4. Create error logging dashboard**
   - GET /api/debug/errors returns recent error log
   - Display in Debug Dashboard UI
   - Show error count by type (network, database, LLM)
   - Add "Clear Errors" button
 
-- [ ] **Test error scenarios**
+- [ ] **5. Test error scenarios**
   - Stop PostgreSQL mid-game and verify graceful degradation
   - Stop llama.cpp and verify instinct fallback
   - Simulate network timeout and verify recovery
@@ -370,31 +370,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Add live vector stream (`scripts/ui/debug.js`)**
+- [ ] **1. Add live vector stream (`scripts/ui/debug.js`)**
   - Display real-time vectors from Layer 2 (last 10)
   - Auto-refresh every 2 seconds
   - Show raw event name, vector values, timestamp
   - Add manual refresh button
 
-- [ ] **Add episode management**
+- [ ] **2. Add episode management**
   - View Full Episode Log: Paginated list of last 50 episodes
   - Seal Episode Now: Force Layer 3 to seal current episode
   - Delete Episode: Remove episode from PostgreSQL by ID
   - Export Episodes: Download as JSON file (via backend)
 
-- [ ] **Add relationship editor**
+- [ ] **3. Add relationship editor**
   - Modal input to manually set trust score (-1 to 1)
   - Modal input to set interaction count
   - Save changes to PostgreSQL via POST /api/debug/edit-relationship
   - Refresh menu to show updated values
 
-- [ ] **Add concept browser**
+- [ ] **4. Add concept browser**
   - View all known concepts in database
   - Show concept name, vector signature, discovery count
   - Add "Teach Concept" button to inject new concept manually
   - Delete concept (removes from database)
 
-- [ ] **Test debug dashboard**
+- [ ] **5. Test debug dashboard**
   - Open debug dashboard and navigate all sub-menus
   - Edit relationship score and verify persistence
   - Force seal episode and check PostgreSQL
@@ -408,31 +408,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Enhance Tier B buffer in Layer 3**
+- [ ] **1. Enhance Tier B buffer in Layer 3**
   - Increase buffer size to 20 Sub-Concepts (10-minute window)
   - Add pattern detection every time new Sub-Concept is added
   - Use sliding window algorithm to find repeating sequences
   - Detect minimum 3 repetitions to confirm pattern
 
-- [ ] **Implement pattern signature matching**
+- [ ] **2. Implement pattern signature matching**
   - Calculate signature hash for detected pattern (e.g., ["Mining", "Falling"])
   - Check macro_patterns table in PostgreSQL for matching signature
   - If match found, tag episode with macro_concept_id
   - If no match, queue LLM labeling request
 
-- [ ] **Add LLM macro labeling**
+- [ ] **3. Add LLM macro labeling**
   - Build prompt: "The following sequence repeated 3 times: [pattern]. What activity is this?"
   - Include example context (player names, locations)
   - LLM returns name (e.g., "Spleef", "Parkour", "Hide and Seek")
   - Store in macro_patterns table with signature
 
-- [ ] **Include Macro-Concepts in LLM prompts**
+- [ ] **4. Include Macro-Concepts in LLM prompts**
   - When building prompt, check if current episode has macro_concept_id
   - Add context: "You are playing [Spleef] with Steve"
   - LLM responses reference game name and rules
   - Villagers make game-specific comments
 
-- [ ] **Test Macro-Concept detection**
+- [ ] **5. Test Macro-Concept detection**
   - Play Spleef (mine, fall, repeat 3x) with villager watching
   - Verify pattern detection triggers
   - Wait for LLM to name it "Spleef"
@@ -446,31 +446,31 @@ Complete the system with **player-facing UI, macro-pattern recognition, gossip s
 
 ### Steps
 
-- [ ] **Add health monitoring endpoints**
+- [ ] **1. Add health monitoring endpoints**
   - GET /api/health/database: Check PostgreSQL connection and query latency
   - GET /api/health/llm: Check llama.cpp status and queue length
   - GET /api/health/metrics: Return performance stats (avg latency, throughput)
   - Create health check dashboard (optional web UI)
 
-- [ ] **Implement log rotation**
+- [ ] **2. Implement log rotation**
   - Configure pino-rotating-file-stream (10MB files, daily rotation)
   - Compress old logs (gzip)
   - Retain logs for 7 days, then delete
   - Test log rotation with high-volume logging
 
-- [ ] **Add admin notifications**
+- [ ] **3. Add admin notifications**
   - When critical error occurs, send in-game message to admins
   - Use world.sendMessage() with admin tag filter
   - Include error type and timestamp
   - Add "View Details" link to Debug Dashboard
 
-- [ ] **Create startup checklist**
+- [ ] **4. Create startup checklist**
   - On backend startup, verify PostgreSQL connection
   - Verify llama.cpp is reachable
   - Load cached concepts from database
   - Log startup status with all component health
 
-- [ ] **Test production readiness**
+- [ ] **5. Test production readiness**
   - Run system for 1 hour with 10+ villagers
   - Monitor TPS (should stay at 20)
   - Check logs for errors or warnings

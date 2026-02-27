@@ -25,31 +25,31 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ### Steps
 
-- [ ] **Create relationship query module (`nodeDB/queries/relationships.js`)**
+- [ ] **1. Create relationship query module (`nodeDB/queries/relationships.js`)**
   - Create getRelationship(villagerID, actorID) query function
   - Create updateRelationship(villagerID, actorID, episodeVector) function
   - Create calculateTrustScore() that averages Sociality (S) over last 10 episodes
   - Use weighted average (recent episodes weighted higher)
 
-- [ ] **Implement trust score calculation**
+- [ ] **2. Implement trust score calculation**
   - Formula: New_Trust = (Old_Trust * 0.7) + (Episode_S * 0.3)
   - Clamp trust score to range [-1, 1]
   - Store in relationships table (trust_score column)
   - Update last_interaction timestamp
 
-- [ ] **Add relationship update to episode write**
+- [ ] **3. Add relationship update to episode write**
   - In writeEpisode() transaction, call updateRelationship()
   - Increment interaction_count for this villager-player pair
   - Recalculate trust_score based on episode's vectorAverage.S
   - COMMIT both operations atomically
 
-- [ ] **Create relationship lookup endpoint**
+- [ ] **4. Create relationship lookup endpoint**
   - GET /api/memory/relationship?villagerID=X&actorID=Y
   - Return { trustScore, interactionCount, lastInteraction }
   - Add to Layer 5 response when episode is written
   - Cache in Working Memory (wm_trustScore_playerID)
 
-- [ ] **Test relationship evolution**
+- [ ] **5. Test relationship evolution**
   - Spawn villager and have player place 10 constructive blocks (high S)
   - Verify trust score increases from 0.5 to ~0.8
   - Have player break 5 villager's blocks (negative S)
@@ -63,31 +63,31 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ### Steps
 
-- [ ] **Add personality schema to database**
+- [ ] **1. Add personality schema to database**
   - Add personality_tags JSONB column to working_memory table
   - Define standard tags: loves_building, is_cautious, values_diamonds, is_brave, is_social
   - Create indexes on personality_tags for fast queries
   - Seed database with default empty tags
 
-- [ ] **Create identity analysis logic (`nodeDB/queries/identity.js`)**
+- [ ] **2. Create identity analysis logic (`nodeDB/queries/identity.js`)**
   - Analyze last 20 episodes for consistent patterns
   - If 70%+ episodes have C > 0.6, tag as loves_building
   - If 70%+ episodes have V > 0.7 for diamonds, tag as values_diamonds
   - If 70%+ episodes have high I but low fear response, tag as is_brave
 
-- [ ] **Run identity analysis periodically**
+- [ ] **3. Run identity analysis periodically**
   - Add cron job or interval in Brain Scheduler (every 5 minutes)
   - For each villager, analyze recent episodes
   - Update personality_tags in working_memory table
   - Log personality changes if DEBUG_MODE enabled
 
-- [ ] **Include personality in LLM prompts**
+- [ ] **4. Include personality in LLM prompts**
   - Fetch personality_tags when building prompt
   - Add section: "Your Personality: [loves_building, is_cautious]"
   - LLM adjusts tone and responses based on traits
   - Test with different personality combinations
 
-- [ ] **Test identity emergence**
+- [ ] **5. Test identity emergence**
   - Have player consistently build near villager (20+ episodes)
   - Verify villager gets tagged with loves_building
   - Trigger LLM response and confirm tone reflects personality
@@ -101,31 +101,31 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ### Steps
 
-- [ ] **Enhance prompt builder (`nodeDB/brain/prompt_builder.js`)**
+- [ ] **1. Enhance prompt builder (`nodeDB/brain/prompt_builder.js`)**
   - Fetch last 5 episodes (up from 3) with summaries
   - Fetch relationship score and interaction history
   - Fetch personality tags from working_memory
   - Include current Working Memory state (mood, shock)
 
-- [ ] **Structure prompt with clear sections**
+- [ ] **2. Structure prompt with clear sections**
   - Section 1: Identity ("You are Villager [name] with traits [tags]")
   - Section 2: Relationship ("Your relationship with Player X: trust score 0.8, 15 interactions")
   - Section 3: Recent Activity ("Last 5 episodes: [summaries]")
   - Section 4: Current State ("Current mood: [C, V, I, S, X], Shock: false")
 
-- [ ] **Add response format instructions**
+- [ ] **3. Add response format instructions**
   - Instruct LLM to return JSON: { action, speechText, internalMonologue }
   - Define allowed actions: speak, idle, pathfind, stare, flee
   - Provide examples of good responses
   - Add stop sequences to prevent runaway generation
 
-- [ ] **Implement response parser (`nodeDB/brain/response_parser.js`)**
+- [ ] **4. Implement response parser (`nodeDB/brain/response_parser.js`)**
   - Parse LLM output and extract JSON
   - Remove markdown code fences if present
   - Validate action field against allowed actions
   - Fallback to { action: "idle" } if parsing fails
 
-- [ ] **Test context-aware responses**
+- [ ] **5. Test context-aware responses**
   - Build relationship with villager (high trust)
   - Trigger event and verify response is friendly
   - Damage villager (low trust) and verify response is cautious
@@ -139,31 +139,31 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ### Steps
 
-- [ ] **Implement pathfind action in Layer 7**
+- [ ] **1. Implement pathfind action in Layer 7**
   - Parse intentPacket.actionParams.targetCoordinates
   - Store target in DynamicProperties (pathfind_target_x/y/z)
   - Set is_pathfinding flag to true
   - Use entity.tryTeleport() or navigation component to move
 
-- [ ] **Implement stare action**
+- [ ] **2. Implement stare action**
   - Parse intentPacket.actionParams.targetEntityID
   - Store target in DynamicProperties (stare_target_id)
   - Run interval loop to update entity head rotation toward target
   - Clear stare_target_id after 5 seconds or if target moves away
 
-- [ ] **Implement flee action**
+- [ ] **3. Implement flee action**
   - Calculate safe location (opposite direction from threat)
   - Use pathfind logic to move to safe location
   - Set shockState to true in Working Memory
   - Continue fleeing until distance > 20 blocks
 
-- [ ] **Add action state tracking**
+- [ ] **4. Add action state tracking**
   - Store current action in DynamicProperty (current_action)
   - Track action start time (action_start_time)
   - Allow action interruption for high-priority intents
   - Log action transitions if DEBUG_MODE enabled
 
-- [ ] **Test advanced actions**
+- [ ] **5. Test advanced actions**
   - Trigger pathfind action (place valuable block 10 blocks away)
   - Verify villager walks toward location
   - Trigger flee action (damage villager)
@@ -177,7 +177,7 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ### Steps
 
-- [ ] **Enhance concept matching in Layer 3 using Cosine Similarity**
+- [ ] **1. Enhance concept matching in Layer 3 using Cosine Similarity**
   - Calculate Cosine Similarity between vectorAverage and all known concepts using pgvector's `<=>` operator
   - Check if villager has discovered this concept (query villager_discoveries table)
   - If best match similarity < 0.8 (cosine distance > 0.2) OR villager hasn't discovered it, mark as "unknown"
@@ -185,25 +185,25 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
   - Send HTTP POST to /api/brain/label-concept with episode details
   - Store requestID and wait for LLM labeling
 
-- [ ] **Create concept labeling endpoint (`nodeDB/routes/brain.js`)**
+- [ ] **2. Create concept labeling endpoint (`nodeDB/routes/brain.js`)**
   - POST /api/brain/label-concept accepts episode vectorAverage and raw events
   - Build prompt: "This villager observed: [events]. What 1-2 word name describes this activity?"
   - Queue LLM request with high priority
   - Return { status: "queued", requestID }
 
-- [ ] **Add concept labeling to Brain Scheduler**
+- [ ] **3. Add concept labeling to Brain Scheduler**
   - Process concept labeling requests before standard intents
   - LLM returns concept name (e.g., "Mining", "Building House")
   - Validate name (alphanumeric, 2-20 characters)
   - Store new concept in concepts table (if doesn't exist)
 
-- [ ] **Update episode and track discovery**
+- [ ] **4. Update episode and track discovery**
   - After concept is labeled, UPDATE episode record with concept_id
   - INSERT into villager_discoveries (villagerID, conceptID, discovered_at, 'witnessed')
   - This enforces subjectivity: only this villager knows this concept now
   - Return confirmation to Script API
 
-- [ ] **Test concept learning and subjectivity**
+- [ ] **5. Test concept learning and subjectivity**
   - Villager A observes novel activity (dig pattern)
   - Verify Layer 3 detects unknown pattern
   - LLM labels it as "Digging Pattern"
@@ -220,31 +220,31 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ### Steps
 
-- [ ] **Add priority scoring to scheduler**
+- [ ] **1. Add priority scoring to scheduler**
   - High priority (100): shockState = true, direct damage
   - Medium priority (70): social interactions, chat, trade
   - Low priority (40): novel patterns, curiosity
   - Routine priority (10): idle behavior, ambient observations
 
-- [ ] **Implement priority queue sorting**
+- [ ] **2. Implement priority queue sorting**
   - Sort queue by priority score (high to low) before processing
   - Break ties by timestamp (FIFO within same priority)
   - Re-sort queue whenever new request is enqueued
   - Log queue state changes if DEBUG_MODE enabled
 
-- [ ] **Add request batching logic**
+- [ ] **3. Add request batching logic**
   - Detect when multiple villagers observe same event (same coordinates + time)
   - Collapse requests into single LLM call with shared context
   - Broadcast result to all observing villagers
   - Log batching event for performance monitoring
 
-- [ ] **Implement request timeout**
+- [ ] **4. Implement request timeout**
   - Add timestamp to each queued request
   - Remove requests older than 30 seconds from queue
   - Return fallback intent { action: "idle" } for timed-out requests
   - Log timeout events for debugging
 
-- [ ] **Test priority queue**
+- [ ] **5. Test priority queue**
   - Queue 5 requests with different priorities
   - Verify high-priority requests process first
   - Damage villager during queue processing
@@ -258,31 +258,31 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ### Steps
 
-- [ ] **Add event deduplication in Brain Scheduler**
+- [ ] **1. Add event deduplication in Brain Scheduler**
   - Track recent events by coordinates + timestamp
   - When multiple villagers request inference for same event, group them
   - Create single LLM request with "multiple observers" context
   - Store mapping of eventID → [villagerIDs]
 
-- [ ] **Build multi-observer LLM prompt**
+- [ ] **2. Build multi-observer LLM prompt**
   - Prompt: "Multiple villagers observed: [event]. Generate a shared understanding."
   - LLM returns generic interpretation (e.g., "Player is building")
   - Split response into individual IntentPackets per villager
   - Adjust responses based on each villager's personality
 
-- [ ] **Broadcast results to all observers**
+- [ ] **3. Broadcast results to all observers**
   - Store one IntentPacket per villagerID in pendingIntents Map
   - Each villager polls independently and receives personalized intent
   - Log batching efficiency (1 LLM call → N villager responses)
   - Track token savings in metrics
 
-- [ ] **Add concept discovery batching**
+- [ ] **4. Add concept discovery batching**
   - When multiple villagers encounter unknown pattern simultaneously
   - Use first villager's context to label concept
   - Share labeled concept with all observers immediately
   - Write concept to each villager's discovery list
 
-- [ ] **Test multi-villager batching**
+- [ ] **5. Test multi-villager batching**
   - Spawn 3 villagers within 10 blocks of each other
   - Perform action visible to all (place nether star)
   - Verify single LLM call is made (check backend logs)
@@ -306,26 +306,26 @@ The current 5-axis [C, V, I, S, X] system is a **manual translation layer** desi
 
 ### Steps
 
-- [ ] **Install Sentence Transformers in Node.js backend**
+- [ ] **1. Install Sentence Transformers in Node.js backend**
   - Add `@xenova/transformers` package for JavaScript-based inference
   - Download `all-MiniLM-L6-v2` model (approx 80MB) to `nodeDB/models/`
   - Create embedding service (`nodeDB/services/embedding_service.js`)
   - Initialize model on backend startup with GPU/CPU detection
 
-- [ ] **Create event description builder (`nodeDB/services/event_describer.js`)**
+- [ ] **2. Create event description builder (`nodeDB/services/event_describer.js`)**
   - Convert raw event data into natural language description
   - Example: `{ eventType: 'placeBlock', blockType: 'diamond_block', actor: 'Steve' }` → "Steve placed a diamond block"
   - Include context: proximity to home, target entity (if applicable), intensity modifiers
   - Keep descriptions concise (10-20 words) for embedding efficiency
 
-- [ ] **Generate embeddings for events**
+- [ ] **3. Generate embeddings for events**
   - Accept event description from Script API (via HTTP POST)
   - Generate 384-dim embedding using `all-MiniLM-L6-v2`
   - Normalize vector (unit length) for consistent cosine similarity
   - Return embedding to Script API for episode storage
   - Cache common event embeddings (e.g., "placed dirt") for performance
 
-- [ ] **Update database schema for 384-dim vectors**
+- [ ] **4. Update database schema for 384-dim vectors**
   - Change `semantic_vector` from `VECTOR(5)` to `VECTOR(384)` in:
     - `concepts` table
     - `episodes` table
@@ -333,26 +333,26 @@ The current 5-axis [C, V, I, S, X] system is a **manual translation layer** desi
   - Rebuild pgvector indexes for 384-dim cosine similarity
   - Migrate existing 5-dim vectors: pad with zeros or regenerate from event logs
 
-- [ ] **Maintain backward compatibility during transition**
+- [ ] **5. Maintain backward compatibility during transition**
   - Keep 5-axis [C, V, I, S, X] calculation in Layer 2 as fallback
   - Store BOTH 5-dim and 384-dim vectors during transition period
   - Use feature flag `USE_EMBEDDINGS=true` in `.env` to toggle between systems
   - Compare concept matching accuracy between 5-dim and 384-dim approaches
 
-- [ ] **Create concept discovery with semantic search**
+- [ ] **6. Create concept discovery with semantic search**
   - When episode is marked "unknown", generate embedding for event description
   - Query `concepts` table using `ORDER BY semantic_vector <=> $1 LIMIT 5` to find nearest neighbors
   - If top match has cosine similarity < 0.85, treat as novel concept
   - LLM labels the concept, then generate embedding for concept name
   - Store concept with 384-dim embedding in `concepts` table
 
-- [ ] **Test semantic understanding**
+- [ ] **7. Test semantic understanding**
   - Test synonym recognition: "sword" vs "blade" should match similar concepts
   - Test modded items: Custom block types should generate reasonable embeddings
   - Test nuanced actions: "slowly placing blocks" vs "rapidly placing blocks"
   - Compare retrieval accuracy: 384-dim should outperform 5-dim on edge cases
 
-- [ ] **Performance optimization**
+- [ ] **8. Performance optimization**
   - Embedding generation: ~10-50ms per event (acceptable for Slow Gear)
   - Cache embeddings for common events to reduce inference load
   - Consider batching multiple events in single inference call
