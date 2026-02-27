@@ -287,11 +287,11 @@ LOG_LEVEL=debug
 
 ### Setup
 
-See `_docs/phases/phase1_backend_setup.md` for detailed installation instructions.
+See `_docs/phases/phase0-setup.md` for detailed installation instructions.
 
 ---
 
 **Document Type:** Project README  
-**Author:** Immersive Villager AI Team  
+**Author:** KiwiQuan
 **Version:** 1.0  
-**Last Updated:** Feb 23, 2026
+**Last Updated:** Feb 26, 2026
