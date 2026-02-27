@@ -39,5 +39,5 @@ When a player enters the Sensory Radius (Layer 1), the brain performs a "Memory 
 
 - **Subjectivity:** All queries must be filtered by `v_id`. A villager cannot access another villager's rows unless explicitly coded as "Gossip."
 - **Async Operations:** Database writes should be handled asynchronously to prevent Minecraft tick-lag.
-- **Vector Comparison:** Use Euclidean distance to match "Unknown" episodes in Layer 3 against the `concepts` table in Layer 5.
+- **Vector Comparison:** Use **Cosine Similarity** (via pgvector's `<=>` operator) to match "Unknown" episodes in Layer 3 against the `concepts` table in Layer 5. Cosine Similarity measures directional alignment (intent) rather than magnitude (intensity), allowing villagers to recognize that "1 flower" and "64 diamonds" are both "gifts" despite different quantities.
 - **Knowledge Isolation.** Villagers cannot "cheat" and use global concept IDs. Every villager must have a `discovery` record for a concept before they can use its label in conversation. If a villager sees a known game but doesn't have the concept record, they must label it as "Strange Activity" until taught.

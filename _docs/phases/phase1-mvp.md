@@ -135,11 +135,12 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
    - Manual seal: High-intensity event (I > 0.8) forces immediate seal
    - Create EpisodeSummary packet with vectorAverage, duration, eventCount, sealReason
 
-4. **Add basic concept matching (DB lookup)**
-   - Calculate Euclidean distance between vectorAverage and known concepts in database
-   - If distance < 0.2, tag episode with matching concept_id
+4. **Add basic concept matching (DB lookup using Cosine Similarity)**
+   - Calculate Cosine Similarity between vectorAverage and known concepts in database using pgvector's `<=>` operator
+   - If similarity > 0.8 (cosine distance < 0.2), tag episode with matching concept_id
+   - Cosine Similarity focuses on directional alignment (intent) rather than magnitude (intensity)
    - If no match, tag as "unknown" for LLM labeling later
-   - Query PostgreSQL via HTTP GET /api/memory/concepts
+   - Query PostgreSQL via HTTP GET /api/memory/concepts with ORDER BY semantic_vector <=> $1 LIMIT 1
 
 5. **Output EpisodeSummary to Layer 4**
    - Pass sealed episode to Layer 4 for Working Memory update

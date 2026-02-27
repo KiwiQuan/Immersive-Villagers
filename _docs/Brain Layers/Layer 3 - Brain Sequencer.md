@@ -35,6 +35,6 @@ Tier B focuses on the "Story" by tracking the sequence of labels provided by Tie
 
 ## 5. Technical Rules for AI Agent
 
-- **Vector Matching:** Use a "Nearest Neighbor" or simple Euclidean distance check to see if an Average Vector matches a known Concept in the DB.
+- **Vector Matching:** Use **Cosine Similarity** (via pgvector's `<=>` operator) to find the nearest neighbor concept in the database. Cosine Similarity measures directional alignment (semantic intent) rather than Euclidean distance (magnitude), making it more robust to intensity variations. A cosine distance < 0.2 (similarity > 0.8) indicates a strong conceptual match.
 - **Pattern Detection:** Use a basic string-matching algorithm to find repeating subarrays in Tier B.
 - **Caching:** Once a Sub-Concept is labeled by the LLM, it MUST be cached in the database so Tier A doesn't ask the LLM for the same label twice.

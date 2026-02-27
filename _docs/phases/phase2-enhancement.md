@@ -177,10 +177,11 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ### Steps
 
-1. **Enhance concept matching in Layer 3**
-   - Calculate Euclidean distance between vectorAverage and all known concepts
+1. **Enhance concept matching in Layer 3 using Cosine Similarity**
+   - Calculate Cosine Similarity between vectorAverage and all known concepts using pgvector's `<=>` operator
    - Check if villager has discovered this concept (query villager_discoveries table)
-   - If best match distance > 0.2 OR villager hasn't discovered it, mark as "unknown"
+   - If best match similarity < 0.8 (cosine distance > 0.2) OR villager hasn't discovered it, mark as "unknown"
+   - Cosine Similarity measures directional alignment (intent), making it robust to intensity variations
    - Send HTTP POST to /api/brain/label-concept with episode details
    - Store requestID and wait for LLM labeling
 
@@ -289,6 +290,126 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 
 ---
 
+## Feature 8: Automatic Vector Generation with all-MiniLM-L6-v2
+
+**Deliverable:** Replace manual [C, V, I, S, X] vector lookup with automatic 384-dimension semantic embeddings.
+
+### Background
+
+The current 5-axis [C, V, I, S, X] system is a **manual translation layer** designed for debugging and human interpretation. Post-MVP, we transition to **automatic vector generation** using the `all-MiniLM-L6-v2` model, which produces 384-dimension embeddings from natural language event descriptions.
+
+**Why This Upgrade Matters:**
+- **Eliminates Lookup Tables:** No need to manually define "diamond = 0.9, dirt = 0.1" in `vector_rules.js`
+- **Semantic Nuance:** The model understands that "sword" and "blade" are semantically similar without explicit mapping
+- **Generalization:** Handles novel items/actions without manual updates (e.g., modded items)
+- **Directional Consistency:** 384-dim vectors maintain the directional (cosine similarity) approach established in Phase 1
+
+### Steps
+
+1. **Install Sentence Transformers in Node.js backend**
+   - Add `@xenova/transformers` package for JavaScript-based inference
+   - Download `all-MiniLM-L6-v2` model (approx 80MB) to `nodeDB/models/`
+   - Create embedding service (`nodeDB/services/embedding_service.js`)
+   - Initialize model on backend startup with GPU/CPU detection
+
+2. **Create event description builder (`nodeDB/services/event_describer.js`)**
+   - Convert raw event data into natural language description
+   - Example: `{ eventType: 'placeBlock', blockType: 'diamond_block', actor: 'Steve' }` → "Steve placed a diamond block"
+   - Include context: proximity to home, target entity (if applicable), intensity modifiers
+   - Keep descriptions concise (10-20 words) for embedding efficiency
+
+3. **Generate embeddings for events**
+   - Accept event description from Script API (via HTTP POST)
+   - Generate 384-dim embedding using `all-MiniLM-L6-v2`
+   - Normalize vector (unit length) for consistent cosine similarity
+   - Return embedding to Script API for episode storage
+   - Cache common event embeddings (e.g., "placed dirt") for performance
+
+4. **Update database schema for 384-dim vectors**
+   - Change `semantic_vector` from `VECTOR(5)` to `VECTOR(384)` in:
+     - `concepts` table
+     - `episodes` table
+     - `working_memory` table
+   - Rebuild pgvector indexes for 384-dim cosine similarity
+   - Migrate existing 5-dim vectors: pad with zeros or regenerate from event logs
+
+5. **Maintain backward compatibility during transition**
+   - Keep 5-axis [C, V, I, S, X] calculation in Layer 2 as fallback
+   - Store BOTH 5-dim and 384-dim vectors during transition period
+   - Use feature flag `USE_EMBEDDINGS=true` in `.env` to toggle between systems
+   - Compare concept matching accuracy between 5-dim and 384-dim approaches
+
+6. **Create concept discovery with semantic search**
+   - When episode is marked "unknown", generate embedding for event description
+   - Query `concepts` table using `ORDER BY semantic_vector <=> $1 LIMIT 5` to find nearest neighbors
+   - If top match has cosine similarity < 0.85, treat as novel concept
+   - LLM labels the concept, then generate embedding for concept name
+   - Store concept with 384-dim embedding in `concepts` table
+
+7. **Test semantic understanding**
+   - Test synonym recognition: "sword" vs "blade" should match similar concepts
+   - Test modded items: Custom block types should generate reasonable embeddings
+   - Test nuanced actions: "slowly placing blocks" vs "rapidly placing blocks"
+   - Compare retrieval accuracy: 384-dim should outperform 5-dim on edge cases
+
+8. **Performance optimization**
+   - Embedding generation: ~10-50ms per event (acceptable for Slow Gear)
+   - Cache embeddings for common events to reduce inference load
+   - Consider batching multiple events in single inference call
+   - Monitor memory usage: 384-dim vectors use ~1.5KB each vs 20 bytes for 5-dim
+
+### Migration Strategy
+
+**Phase 2A (Parallel Operation):**
+- Generate BOTH 5-dim and 384-dim vectors
+- Store both in database (separate columns)
+- Use 5-dim for concept matching (established baseline)
+- Log 384-dim matching results for comparison
+
+**Phase 2B (Validation):**
+- Compare concept matching accuracy over 100+ episodes
+- Measure false positive/negative rates for both systems
+- Gather qualitative feedback: Do villagers recognize patterns better?
+
+**Phase 2C (Full Migration):**
+- Switch `USE_EMBEDDINGS=true` in production
+- Deprecate 5-dim vector generation
+- Remove `vector_rules.js` lookup tables
+- Regenerate all concept embeddings from natural language descriptions
+
+### Performance Impact
+
+| Metric | 5-Dim Manual System | 384-Dim Automatic System | Notes |
+|--------|---------------------|--------------------------|-------|
+| Vector Generation | <1ms (lookup) | 10-50ms (inference) | Acceptable for Slow Gear |
+| Storage per Episode | 20 bytes | 1.5KB | ~75x increase, negligible for modern storage |
+| Concept Matching | <5ms (pgvector) | <5ms (pgvector) | Both use same `<=>` operator |
+| Maintenance | High (manual updates) | Low (automatic) | No lookup table updates needed |
+| Semantic Quality | Limited (predefined) | High (generalizes) | Handles novel scenarios |
+
+### Example Comparison
+
+**Manual 5-Dim System:**
+```javascript
+// vector_rules.js
+blockValues = {
+  'minecraft:diamond_block': { C: 0.8, V: 0.9, I: 0.3, S: 0.1, X: 0.1 },
+  'minecraft:dirt': { C: 0.8, V: 0.1, I: 0.2, S: 0.1, X: 0.0 }
+}
+// "golden_sword" not in lookup → defaults to generic values
+```
+
+**Automatic 384-Dim System:**
+```javascript
+// No lookup needed!
+const description = "Player wielded a golden sword aggressively";
+const embedding = await generateEmbedding(description);
+// Model understands: "golden sword" ≈ "diamond blade" (high cosine similarity)
+// Model understands: "aggressively" → higher intensity inference
+```
+
+---
+
 ## Testing Checklist
 
 - [ ] Trust scores update correctly based on S axis values
@@ -306,6 +427,12 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 - [ ] Priority queue processes high-priority requests first
 - [ ] Request batching works for multi-villager observations
 - [ ] Batched concepts are shared among all observers (all get discovery entries)
+- [ ] Cosine Similarity used for all vector comparisons (not Euclidean distance)
+- [ ] pgvector indexes accelerate concept matching queries
+- [ ] all-MiniLM-L6-v2 generates 384-dim embeddings correctly (if enabled)
+- [ ] Embedding generation completes within 50ms per event
+- [ ] Synonym recognition works (e.g., "sword" matches "blade")
+- [ ] 5-dim and 384-dim systems run in parallel during transition (if applicable)
 - [ ] Network failures don't crash villagers (graceful degradation)
 - [ ] Performance targets maintained (<5ms Fast Gear per event)
 
@@ -320,6 +447,7 @@ Enhance the MVP with **relationship scoring, personality traits, context-aware L
 - No multi-turn conversations (villagers respond once per episode)
 - No instinct fallback system (relies on network/LLM availability)
 - No advanced personality traits (only 5 basic tags)
+- 384-dim embedding system is optional (Feature 8); defaults to 5-dim manual system if not enabled
 
 ---
 

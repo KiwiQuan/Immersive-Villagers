@@ -30,12 +30,13 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
    - Grant permissions to user
 
 2. **Create base schema file (`nodeDB/db/schema.sql`)**
+   - Enable pgvector extension for high-performance vector operations
    - Define `villagers` table (villager_id PRIMARY KEY, name, home_x/y/z, profession, created_at, last_seen, is_active)
-   - Define `concepts` table (concept_id PRIMARY KEY, name, vector_signature, discovery_count)
+   - Define `concepts` table (concept_id PRIMARY KEY, name, semantic_vector VECTOR(5), discovery_count)
    - Define `villager_discoveries` table (villager_id FK, concept_id FK, discovered_at, discovery_method)
-   - Define `episodes` table (villager_id FK, actor_id, vector_c/v/i/s/x, duration, event_count, seal_reason, timestamp)
+   - Define `episodes` table (villager_id FK, actor_id, semantic_vector VECTOR(5), duration, event_count, seal_reason, timestamp)
    - Define `relationships` table (villager_id FK, actor_id, interaction_count, trust_score, last_interaction)
-   - Define `working_memory` table (villager_id FK PRIMARY KEY, mood_c/v/i/s/x, current_focus, shock_state, last_update)
+   - Define `working_memory` table (villager_id FK PRIMARY KEY, current_mood VECTOR(5), current_focus, shock_state, last_update)
    - Add indexes on villager_id, timestamp, and foreign key columns
    - Add ON DELETE CASCADE for all foreign keys
 
@@ -61,6 +62,9 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
 ### Schema Reference (`nodeDB/db/schema.sql`)
 
 ```sql
+-- Enable pgvector extension for high-performance vector operations
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- Core villager identity table
 CREATE TABLE villagers (
   villager_id TEXT PRIMARY KEY,
@@ -75,14 +79,11 @@ CREATE TABLE villagers (
 );
 
 -- Concept definitions (shared knowledge pool)
+-- semantic_vector stores [C, V, I, S, X] as VECTOR(5) for fast cosine similarity
 CREATE TABLE concepts (
   concept_id SERIAL PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
-  vector_c REAL NOT NULL,
-  vector_v REAL NOT NULL,
-  vector_i REAL NOT NULL,
-  vector_s REAL NOT NULL,
-  vector_x REAL NOT NULL,
+  semantic_vector VECTOR(5) NOT NULL,
   discovery_count INTEGER DEFAULT 0
 );
 
@@ -96,15 +97,12 @@ CREATE TABLE villager_discoveries (
 );
 
 -- Episode storage: recorded memories
+-- semantic_vector stores episode's average [C, V, I, S, X] vector
 CREATE TABLE episodes (
   id SERIAL PRIMARY KEY,
   villager_id TEXT NOT NULL REFERENCES villagers(villager_id) ON DELETE CASCADE,
   actor_id TEXT NOT NULL,
-  vector_c REAL NOT NULL,
-  vector_v REAL NOT NULL,
-  vector_i REAL NOT NULL,
-  vector_s REAL NOT NULL,
-  vector_x REAL NOT NULL,
+  semantic_vector VECTOR(5) NOT NULL,
   duration INTEGER,
   event_count INTEGER,
   seal_reason TEXT,
@@ -123,13 +121,10 @@ CREATE TABLE relationships (
 );
 
 -- Working memory snapshot (synced from DynamicProperties)
+-- current_mood stores the villager's current [C, V, I, S, X] state
 CREATE TABLE working_memory (
   villager_id TEXT PRIMARY KEY REFERENCES villagers(villager_id) ON DELETE CASCADE,
-  mood_c REAL NOT NULL,
-  mood_v REAL NOT NULL,
-  mood_i REAL NOT NULL,
-  mood_s REAL NOT NULL,
-  mood_x REAL NOT NULL,
+  current_mood VECTOR(5) NOT NULL,
   current_focus TEXT,
   shock_state BOOLEAN DEFAULT FALSE,
   last_update BIGINT NOT NULL
@@ -143,14 +138,22 @@ CREATE INDEX idx_relationships_villager ON relationships(villager_id);
 CREATE INDEX idx_relationships_actor ON relationships(actor_id);
 CREATE INDEX idx_discoveries_villager ON villager_discoveries(villager_id);
 CREATE INDEX idx_discoveries_concept ON villager_discoveries(concept_id);
+
+-- Vector similarity indexes using pgvector for fast cosine similarity queries
+-- These enable the <=> operator for efficient memory retrieval
+CREATE INDEX idx_concepts_vector ON concepts USING ivfflat (semantic_vector vector_cosine_ops);
+CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vector_cosine_ops);
 ```
 
 **Key Design Decisions:**
+- **pgvector Integration:** Enables hardware-accelerated cosine similarity via `<=>` operator
+- **VECTOR(5) Type:** Stores [C, V, I, S, X] semantic vectors natively in PostgreSQL
+- **Cosine Similarity:** Uses directional vector comparison (intent-based) rather than magnitude (Euclidean)
 - `villagers` table is the central registry for all villager entities
 - Foreign keys use `ON DELETE CASCADE` to auto-clean data when villagers despawn
 - `villager_discoveries` enforces subjectivity (villagers only know what they've learned)
 - `concepts` stores the shared knowledge pool, but access is gated by `villager_discoveries`
-- Indexes optimize common queries (episode history, relationship lookups)
+- Indexes optimize common queries (episode history, relationship lookups, vector similarity)
 
 ---
 
