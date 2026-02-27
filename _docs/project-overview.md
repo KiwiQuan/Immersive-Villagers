@@ -29,7 +29,7 @@ This project implements a modular cognitive architecture for Minecraft Bedrock E
 - **Environment:** Minecraft Bedrock Dedicated Server (BDS).
 - **Networking:** `@minecraft/server-net` for direct, silent HTTP/REST requests to the backend.
 - **Outbound Data:** Script API sends JSON payloads directly to Node.js via `http.post()`.
-- **Inbound Data:** Node.js responds to HTTP requests with data, or uses `/scriptevent` for server-initiated triggers.
+- **Inbound Data:** Node.js responds to HTTP requests with data
 - **Intelligence:** Local LLM (llama.cpp) accessed via the Node.js bridge.
 - **Storage:** **PostgreSQL** for long-term subjective memory, managed by Node.js.
 - **State Management:** **`DynamicProperties**` for high-frequency data (health tracking, emotional volatility, connection status).

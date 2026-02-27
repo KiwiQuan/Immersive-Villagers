@@ -23,41 +23,41 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
 
 ### Steps
 
-1. **Install PostgreSQL 15+ and create database**
-   - Install PostgreSQL on host machine
-   - Create `villager_memory` database
-   - Create `minecraft_ai` user with secure password
-   - Grant permissions to user
+- [ ] **Install PostgreSQL 15+ and create database**
+  - Install PostgreSQL on host machine
+  - Create `villager_memory` database
+  - Create `minecraft_ai` user with secure password
+  - Grant permissions to user
 
-2. **Create base schema file (`nodeDB/db/schema.sql`)**
-   - Enable pgvector extension for high-performance vector operations
-   - Define `villagers` table (villager_id PRIMARY KEY, name, home_x/y/z, profession, created_at, last_seen, is_active)
-   - Define `concepts` table (concept_id PRIMARY KEY, name, semantic_vector VECTOR(5), discovery_count)
-   - Define `villager_discoveries` table (villager_id FK, concept_id FK, discovered_at, discovery_method)
-   - Define `episodes` table (villager_id FK, actor_id, semantic_vector VECTOR(5), duration, event_count, seal_reason, timestamp)
-   - Define `relationships` table (villager_id FK, actor_id, interaction_count, trust_score, last_interaction)
-   - Define `working_memory` table (villager_id FK PRIMARY KEY, current_mood VECTOR(5), current_focus, shock_state, last_update)
-   - Add indexes on villager_id, timestamp, and foreign key columns
-   - Add ON DELETE CASCADE for all foreign keys
+- [ ] **Create base schema file (`nodeDB/db/schema.sql`)**
+  - Enable pgvector extension for high-performance vector operations
+  - Define `villagers` table (villager_id PRIMARY KEY, name, home_x/y/z, profession, created_at, last_seen, is_active)
+  - Define `concepts` table (concept_id PRIMARY KEY, name, semantic_vector VECTOR(5), discovery_count)
+  - Define `villager_discoveries` table (villager_id FK, concept_id FK, discovered_at, discovery_method)
+  - Define `episodes` table (villager_id FK, actor_id, semantic_vector VECTOR(5), duration, event_count, seal_reason, timestamp)
+  - Define `relationships` table (villager_id FK, actor_id, interaction_count, trust_score, last_interaction)
+  - Define `working_memory` table (villager_id FK PRIMARY KEY, current_mood VECTOR(5), current_focus, shock_state, last_update)
+  - Add indexes on villager_id, timestamp, and foreign key columns
+  - Add ON DELETE CASCADE for all foreign keys
 
-3. **Apply schema to database**
-   - Run schema.sql using psql command: `psql -U minecraft_ai -d villager_memory -f schema.sql`
-   - Verify tables exist with `\dt` command (should show 6 tables)
-   - Verify foreign keys with `\d episodes` (should show REFERENCES villagers)
-   - Test INSERT/SELECT operations manually
+- [ ] **Apply schema to database**
+  - Run schema.sql using psql command: `psql -U minecraft_ai -d villager_memory -f schema.sql`
+  - Verify tables exist with `\dt` command (should show 6 tables)
+  - Verify foreign keys with `\d episodes` (should show REFERENCES villagers)
+  - Test INSERT/SELECT operations manually
 
-4. **Create pg-pool configuration (`nodeDB/db/pool.js`)**
-   - Initialize connection pool with max 20 connections
-   - Set idle timeout (30s) and connection timeout (2s)
-   - Add error event listeners for pool monitoring
-   - Export pool instance for use in queries
+- [ ] **Create pg-pool configuration (`nodeDB/db/pool.js`)**
+  - Initialize connection pool with max 20 connections
+  - Set idle timeout (30s) and connection timeout (2s)
+  - Add error event listeners for pool monitoring
+  - Export pool instance for use in queries
 
-5. **Test database connectivity**
-   - Write simple Node.js script to connect to pool
-   - Execute test INSERT into villagers table (must insert villager before episodes)
-   - Execute test INSERT into episodes table with valid villager_id
-   - Execute test SELECT with JOIN to verify foreign key relationships
-   - Verify connection pooling works (multiple concurrent queries)
+- [ ] **Test database connectivity**
+  - Write simple Node.js script to connect to pool
+  - Execute test INSERT into villagers table (must insert villager before episodes)
+  - Execute test INSERT into episodes table with valid villager_id
+  - Execute test SELECT with JOIN to verify foreign key relationships
+  - Verify connection pooling works (multiple concurrent queries)
 
 ### Schema Reference (`nodeDB/db/schema.sql`)
 
@@ -146,6 +146,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 ```
 
 **Key Design Decisions:**
+
 - **pgvector Integration:** Enables hardware-accelerated cosine similarity via `<=>` operator
 - **VECTOR(5) Type:** Stores [C, V, I, S, X] semantic vectors natively in PostgreSQL
 - **Cosine Similarity:** Uses directional vector comparison (intent-based) rather than magnitude (Euclidean)
@@ -163,35 +164,35 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-1. **Initialize Node.js project (`nodeDB/`)**
-   - Create package.json with dependencies (express, pg, pino, axios, dotenv)
-   - Create .env file with database credentials and configuration
-   - Create .gitignore to exclude node_modules and .env
-   - Run npm install to download dependencies
+- [ ] **Initialize Node.js project (`nodeDB/`)**
+  - Create package.json with dependencies (express, pg, pino, axios, dotenv)
+  - Create .env file with database credentials and configuration
+  - Create .gitignore to exclude node_modules and .env
+  - Run npm install to download dependencies
 
-2. **Create Express app (`nodeDB/app.js`)**
-   - Initialize Express with JSON body parser (1mb limit)
-   - Add basic middleware stack (logger, error handler)
-   - Define route structure (/api/memory, /api/brain, /api/debug)
-   - Export app instance
+- [ ] **Create Express app (`nodeDB/app.js`)**
+  - Initialize Express with JSON body parser (1mb limit)
+  - Add basic middleware stack (logger, error handler)
+  - Define route structure (/api/memory, /api/brain, /api/debug)
+  - Export app instance
 
-3. **Create health check endpoint (`nodeDB/routes/debug.js`)**
-   - GET /api/health returns { status: "online", timestamp }
-   - Test database connection and return pool stats
-   - Test llama.cpp connection (if available)
-   - Return comprehensive health status
+- [ ] **Create health check endpoint (`nodeDB/routes/debug.js`)**
+  - GET /api/health returns { status: "online", timestamp }
+  - Test database connection and return pool stats
+  - Test llama.cpp connection (if available)
+  - Return comprehensive health status
 
-4. **Create Pino logger (`nodeDB/utils/logger.js`)**
-   - Initialize Pino with level from LOG_LEVEL env var
-   - Configure pino-pretty for development mode
-   - Add log rotation setup (10MB files, daily rotation)
-   - Export logger instance
+- [ ] **Create Pino logger (`nodeDB/utils/logger.js`)**
+  - Initialize Pino with level from LOG_LEVEL env var
+  - Configure pino-pretty for development mode
+  - Add log rotation setup (10MB files, daily rotation)
+  - Export logger instance
 
-5. **Start server and test (`nodeDB/server.js`)**
-   - Create server.js that imports app and starts listening on port 3000
-   - Test health endpoint with curl command
-   - Verify logs are written to console/file
-   - Confirm graceful shutdown on SIGTERM/SIGINT
+- [ ] **Start server and test (`nodeDB/server.js`)**
+  - Create server.js that imports app and starts listening on port 3000
+  - Test health endpoint with curl command
+  - Verify logs are written to console/file
+  - Confirm graceful shutdown on SIGTERM/SIGINT
 
 ---
 
@@ -201,35 +202,35 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-1. **Download and build llama.cpp**
-   - Clone llama.cpp repository from GitHub
-   - Run make command to compile for host platform
-   - Verify compilation succeeded (./server binary exists)
-   - Test basic inference with sample model
+- [ ] **Download and build llama.cpp**
+  - Clone llama.cpp repository from GitHub
+  - Run make command to compile for host platform
+  - Verify compilation succeeded (./server binary exists)
+  - Test basic inference with sample model
 
-2. **Download Llama 3.1 8B Q4_K_M model**
-   - Download model file from HuggingFace (approx 5GB)
-   - Save to models/ directory in llama.cpp folder
-   - Verify file integrity (check file size matches expected)
-   - Test model loading with ./server command
+- [ ] **Download Llama 3.1 8B Q4_K_M model**
+  - Download model file from HuggingFace (approx 5GB)
+  - Save to models/ directory in llama.cpp folder
+  - Verify file integrity (check file size matches expected)
+  - Test model loading with ./server command
 
-3. **Start llama.cpp server**
-   - Run server with context length 2048, port 8080, 4-8 threads
-   - Verify server starts without errors
-   - Check memory usage (should be 5-6GB)
-   - Confirm server is listening on localhost:8080
+- [ ] **Start llama.cpp server**
+  - Run server with context length 2048, port 8080, 4-8 threads
+  - Verify server starts without errors
+  - Check memory usage (should be 5-6GB)
+  - Confirm server is listening on localhost:8080
 
-4. **Create LLM client wrapper (`nodeDB/brain/llm_client.js`)**
-   - Create callLLM() function that posts to localhost:8080/completion
-   - Set timeout to 10 seconds
-   - Parse response and extract content field
-   - Add error handling for connection failures
+- [ ] **Create LLM client wrapper (`nodeDB/brain/llm_client.js`)**
+  - Create callLLM() function that posts to localhost:8080/completion
+  - Set timeout to 10 seconds
+  - Parse response and extract content field
+  - Add error handling for connection failures
 
-5. **Test LLM inference**
-   - Send test prompt "You are a villager. Say hello."
-   - Verify response is received within 2-4 seconds
-   - Test with longer prompts (512 tokens)
-   - Confirm JSON parsing works correctly
+- [ ] **Test LLM inference**
+  - Send test prompt "You are a villager. Say hello."
+  - Verify response is received within 2-4 seconds
+  - Test with longer prompts (512 tokens)
+  - Confirm JSON parsing works correctly
 
 ---
 
@@ -239,35 +240,35 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-1. **Create test script (`scripts/test_http.js`)**
-   - Import @minecraft/server-net http module
-   - Create function to POST test data to /api/health
-   - Parse response body and log result
-   - Add error handling for network failures
+- [ ] **Create test script (`scripts/test_http.js`)**
+  - Import @minecraft/server-net http module
+  - Create function to POST test data to /api/health
+  - Parse response body and log result
+  - Add error handling for network failures
 
-2. **Test POST request to backend**
-   - Start Node.js backend on port 3000
-   - Run test script in Minecraft server
-   - Verify request reaches backend (check Pino logs)
-   - Confirm response is received in Script API
+- [ ] **Test POST request to backend**
+  - Start Node.js backend on port 3000
+  - Run test script in Minecraft server
+  - Verify request reaches backend (check Pino logs)
+  - Confirm response is received in Script API
 
-3. **Test GET request from backend**
-   - Create test endpoint in backend (GET /api/test)
-   - Send GET request from Script API
-   - Verify response parsing works
-   - Test timeout handling (simulate slow endpoint)
+- [ ] **Test GET request from backend**
+  - Create test endpoint in backend (GET /api/test)
+  - Send GET request from Script API
+  - Verify response parsing works
+  - Test timeout handling (simulate slow endpoint)
 
-4. **Create network helper module (`scripts/utils/network_helpers.js`)**
-   - Wrap http.post() with try/catch and timeout logic
-   - Wrap http.get() with retry mechanism (3 attempts)
-   - Add logging for DEBUG_MODE
-   - Export helper functions
+- [ ] **Create network helper module (`scripts/utils/network_helpers.js`)**
+  - Wrap http.post() with try/catch and timeout logic
+  - Wrap http.get() with retry mechanism (3 attempts)
+  - Add logging for DEBUG_MODE
+  - Export helper functions
 
-5. **Test error scenarios**
-   - Stop backend server and verify Script API handles connection refused
-   - Test timeout scenario (backend responds after 10+ seconds)
-   - Verify error messages are logged correctly
-   - Confirm game doesn't crash on network errors
+- [ ] **Test error scenarios**
+  - Stop backend server and verify Script API handles connection refused
+  - Test timeout scenario (backend responds after 10+ seconds)
+  - Verify error messages are logged correctly
+  - Confirm game doesn't crash on network errors
 
 ---
 
@@ -277,35 +278,35 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-1. **Define Working Memory schema (`scripts/config/dynamic_properties_schema.js`)**
-   - Define property names (wm_currentFocus, wm_currentMood_C/V/I/S/X, etc.)
-   - Define data types (TEXT, REAL, BOOLEAN, BIGINT)
-   - Export schema as constant for reference
-   - Add JSDoc documentation for each property
+- [ ] **Define Working Memory schema (`scripts/config/dynamic_properties_schema.js`)**
+  - Define property names (wm_currentFocus, wm_currentMood_C/V/I/S/X, etc.)
+  - Define data types (TEXT, REAL, BOOLEAN, BIGINT)
+  - Export schema as constant for reference
+  - Add JSDoc documentation for each property
 
-2. **Create DynamicProperties helper module (`scripts/utils/dynamic_properties_helpers.js`)**
-   - Create getWorkingMemory(entity) function to read all WM properties
-   - Create setWorkingMemory(entity, workingMemory) function to write all WM properties
-   - Add validation to ensure entity.isValid() before operations
-   - Export helper functions with JSDoc
+- [ ] **Create DynamicProperties helper module (`scripts/utils/dynamic_properties_helpers.js`)**
+  - Create getWorkingMemory(entity) function to read all WM properties
+  - Create setWorkingMemory(entity, workingMemory) function to write all WM properties
+  - Add validation to ensure entity.isValid() before operations
+  - Export helper functions with JSDoc
 
-3. **Test property persistence**
-   - Create test villager in-game
-   - Set Working Memory properties via helper functions
-   - Restart Minecraft server
-   - Verify properties persist after restart
+- [ ] **Test property persistence**
+  - Create test villager in-game
+  - Set Working Memory properties via helper functions
+  - Restart Minecraft server
+  - Verify properties persist after restart
 
-4. **Create property initialization (`scripts/layers/layer4_working_memory.js`)**
-   - Create initializeWorkingMemory(entity) function
-   - Set default values for all WM properties (mood: 0.5 for all axes)
-   - Add timestamp for wm_lastUpdate
-   - Run initialization for all villagers on world load
+- [ ] **Create property initialization (`scripts/layers/layer4_working_memory.js`)**
+  - Create initializeWorkingMemory(entity) function
+  - Set default values for all WM properties (mood: 0.5 for all axes)
+  - Add timestamp for wm_lastUpdate
+  - Run initialization for all villagers on world load
 
-5. **Test with multiple villagers**
-   - Spawn 5 test villagers in-game
-   - Initialize Working Memory for each
-   - Verify each villager has isolated properties
-   - Test entity.isValid() checks work correctly
+- [ ] **Test with multiple villagers**
+  - Spawn 5 test villagers in-game
+  - Initialize Working Memory for each
+  - Verify each villager has isolated properties
+  - Test entity.isValid() checks work correctly
 
 ---
 
@@ -315,35 +316,35 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-1. **Create DEBUG_MODE toggle command (`scripts/utils/debug_logger.js`)**
-   - Read DEBUG_MODE from world.getDynamicProperty('DEBUG_MODE')
-   - Create debugLog(layer, message, data) function that checks flag
-   - Create errorLog(layer, message, error) function (always logs)
-   - Export logging functions with JSDoc
+- [ ] **Create DEBUG_MODE toggle command (`scripts/utils/debug_logger.js`)**
+  - Read DEBUG_MODE from world.getDynamicProperty('DEBUG_MODE')
+  - Create debugLog(layer, message, data) function that checks flag
+  - Create errorLog(layer, message, error) function (always logs)
+  - Export logging functions with JSDoc
 
-2. **Add in-game toggle command**
-   - Register custom command or use /scriptevent to toggle DEBUG_MODE
-   - Set world.setDynamicProperty('DEBUG_MODE', true/false)
-   - Broadcast confirmation message to all admins
-   - Log toggle event to console
+- [ ] **Add in-game toggle command**
+  - Register custom command or use /scriptevent to toggle DEBUG_MODE
+  - Set world.setDynamicProperty('DEBUG_MODE', true/false)
+  - Broadcast confirmation message to all admins
+  - Log toggle event to console
 
-3. **Add DEBUG_MODE logging to test scripts**
-   - Add debugLog() calls to HTTP test script
-   - Add debugLog() calls to DynamicProperties test script
-   - Enable DEBUG_MODE in-game
-   - Verify logs appear in Content Log
+- [ ] **Add DEBUG_MODE logging to test scripts**
+  - Add debugLog() calls to HTTP test script
+  - Add debugLog() calls to DynamicProperties test script
+  - Enable DEBUG_MODE in-game
+  - Verify logs appear in Content Log
 
-4. **Sync DEBUG_MODE with backend**
-   - Create /api/debug/toggle endpoint in backend
-   - Accept DEBUG_MODE state from Script API
-   - Update LOG_LEVEL in Pino logger dynamically
-   - Return confirmation response
+- [ ] **Sync DEBUG_MODE with backend**
+  - Create /api/debug/toggle endpoint in backend
+  - Accept DEBUG_MODE state from Script API
+  - Update LOG_LEVEL in Pino logger dynamically
+  - Return confirmation response
 
-5. **Test toggle functionality**
-   - Enable DEBUG_MODE in-game
-   - Verify Script API logs appear
-   - Verify backend switches to debug log level
-   - Disable DEBUG_MODE and confirm logs stop
+- [ ] **Test toggle functionality**
+  - Enable DEBUG_MODE in-game
+  - Verify Script API logs appear
+  - Verify backend switches to debug log level
+  - Disable DEBUG_MODE and confirm logs stop
 
 ---
 

@@ -25,35 +25,35 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ### Steps
 
-1. **Create event listeners (`scripts/events/player_events.js`)**
-   - Subscribe to playerPlaceBlock, playerBreakBlock events
-   - Subscribe to entityHurt, playerSpawn events
-   - Extract event data (actor, location, block type)
-   - Pass raw events to Layer 1 filter
+- [ ] **Create event listeners (`scripts/events/player_events.js`)**
+  - Subscribe to playerPlaceBlock, playerBreakBlock events
+  - Subscribe to entityHurt, playerSpawn events
+  - Extract event data (actor, location, block type)
+  - Pass raw events to Layer 1 filter
 
-2. **Implement proximity filter (`scripts/layers/layer1_sensory.js`)**
-   - Get all AI-tagged villagers via dimension.getEntities()
-   - Calculate distance between event location and each villager
-   - Filter events beyond AWARENESS_RADIUS (32 blocks)
-   - Create FilteredEventContext packet for nearby events
+- [ ] **Implement proximity filter (`scripts/layers/layer1_sensory.js`)**
+  - Get all AI-tagged villagers via dimension.getEntities()
+  - Calculate distance between event location and each villager
+  - Filter events beyond AWARENESS_RADIUS (32 blocks)
+  - Create FilteredEventContext packet for nearby events
 
-3. **Implement Line of Sight check**
-   - Use entity.getBlockFromViewDirection() for LOS raycast
-   - Check if blocks obstruct view between villager and event location
-   - Mark events as hasLOS: true/false in FilteredEventContext
-   - Skip LOS check for audio events (explosions, chat)
+- [ ] **Implement Line of Sight check**
+  - Use entity.getBlockFromViewDirection() for LOS raycast
+  - Check if blocks obstruct view between villager and event location
+  - Mark events as hasLOS: true/false in FilteredEventContext
+  - Skip LOS check for audio events (explosions, chat)
 
-4. **Add priority classification**
-   - Classify events as P0 (critical), P1 (high), P2 (low)
-   - P0: entityHurt on villager, fire nearby, explosions
-   - P1: player actions within 10 blocks, block changes
-   - P2: player movement, ambient entity spawns
+- [ ] **Add priority classification**
+  - Classify events as P0 (critical), P1 (high), P2 (low)
+  - P0: entityHurt on villager, fire nearby, explosions
+  - P1: player actions within 10 blocks, block changes
+  - P2: player movement, ambient entity spawns
 
-5. **Output FilteredEventContext to Layer 2**
-   - Create JSON packet with event details
-   - Include villagerID, actorID, coordinates, proximity, hasLOS
-   - Pass to Layer 2 vectorizer function
-   - Add debugLog() call for DEBUG_MODE
+- [ ] **Output FilteredEventContext to Layer 2**
+  - Create JSON packet with event details
+  - Include villagerID, actorID, coordinates, proximity, hasLOS
+  - Pass to Layer 2 vectorizer function
+  - Add debugLog() call for DEBUG_MODE
 
 ---
 
@@ -63,51 +63,51 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ### Steps
 
-1. **Create vector rules lookup (`scripts/config/vector_rules.js`)**
-   - Define base C values for block place (+0.8) and break (-0.6)
-   - Define V values for common blocks (diamond: 0.9, dirt: 0.1, ore: 0.6-0.8, etc.)
-   - Define I values for event types (explosion: 0.9, damage: 0.8, slow place: 0.2)
-   - Define S values for interaction types (IMPORTANT: based on TYPE, not location):
-     - Direct social: chat (+0.8), trade (+0.9), giveItem (+0.7)
-     - Solo constructive: placeBlock (+0.1), craft (+0.1)
-     - Solo destructive: breakBlock (-0.1), mining (-0.05)
-     - Hostile: attack (-0.9), steal (-0.8), griefing (-0.7)
-   - Define X values for logic blocks (redstone: 0.8, comparator: 0.9, dirt: 0.1)
-   - NOTE: Home proximity modifies I and V (1.5x multiplier), NOT S
+- [ ] **Create vector rules lookup (`scripts/config/vector_rules.js`)**
+  - Define base C values for block place (+0.8) and break (-0.6)
+  - Define V values for common blocks (diamond: 0.9, dirt: 0.1, ore: 0.6-0.8, etc.)
+  - Define I values for event types (explosion: 0.9, damage: 0.8, slow place: 0.2)
+  - Define S values for interaction types (IMPORTANT: based on TYPE, not location):
+    - Direct social: chat (+0.8), trade (+0.9), giveItem (+0.7)
+    - Solo constructive: placeBlock (+0.1), craft (+0.1)
+    - Solo destructive: breakBlock (-0.1), mining (-0.05)
+    - Hostile: attack (-0.9), steal (-0.8), griefing (-0.7)
+  - Define X values for logic blocks (redstone: 0.8, comparator: 0.9, dirt: 0.1)
+  - NOTE: Home proximity modifies I and V (1.5x multiplier), NOT S
 
-2. **Implement vectorization logic (`scripts/layers/layer2_vectorizer.js`)**
-   - Create calculateVector(eventContext) function
-   - Extract C from event type (place vs. break)
-   - Extract V from block type (lookup in vector_rules)
-   - Extract I from event intensity (damage amount, speed)
-   - Calculate S and X based on interaction type and block complexity
+- [ ] **Implement vectorization logic (`scripts/layers/layer2_vectorizer.js`)**
+  - Create calculateVector(eventContext) function
+  - Extract C from event type (place vs. break)
+  - Extract V from block type (lookup in vector_rules)
+  - Extract I from event intensity (damage amount, speed)
+  - Calculate S and X based on interaction type and block complexity
 
-3. **Add Sociality (S) calculation (Pure Social Intent)**
-   - S represents inherent social nature of the interaction TYPE, not location
-   - High S (+0.7 to +0.9): Direct social actions (chat, trade, giveItem, collaborate)
-   - Neutral S (-0.2 to +0.2): Solo activities (placeBlock: +0.1, breakBlock: -0.1, mining: 0)
-   - Negative S (-0.7 to -0.9): Hostile actions (attack, steal, griefing)
-   - Location does NOT define S; a player breaking blocks alone is "solo work" regardless of proximity
+- [ ] **Add Sociality (S) calculation (Pure Social Intent)**
+  - S represents inherent social nature of the interaction TYPE, not location
+  - High S (+0.7 to +0.9): Direct social actions (chat, trade, giveItem, collaborate)
+  - Neutral S (-0.2 to +0.2): Solo activities (placeBlock: +0.1, breakBlock: -0.1, mining: 0)
+  - Negative S (-0.7 to -0.9): Hostile actions (attack, steal, griefing)
+  - Location does NOT define S; a player breaking blocks alone is "solo work" regardless of proximity
 
-4. **Add Territory Proximity Multiplier (Home as Context)**
-   - Check if event occurred within villager's home territory (25-block radius from home_x/y/z)
-   - If near home: Apply 1.5x multiplier to Intensity (I) and Value (V)
-   - Reasoning: Events near home feel MORE intense and MORE important, not more/less social
-   - Example: Breaking dirt far away (I:0.2, V:0.1) vs. near home (I:0.3, V:0.15)
-   - Hostile events (S < 0) near home feel more threatening due to higher I, not different S
+- [ ] **Add Territory Proximity Multiplier (Home as Context)**
+  - Check if event occurred within villager's home territory (25-block radius from home_x/y/z)
+  - If near home: Apply 1.5x multiplier to Intensity (I) and Value (V)
+  - Reasoning: Events near home feel MORE intense and MORE important, not more/less social
+  - Example: Breaking dirt far away (I:0.2, V:0.1) vs. near home (I:0.3, V:0.15)
+  - Hostile events (S < 0) near home feel more threatening due to higher I, not different S
 
-5. **Create SemanticVector output packet**
-   - Package vector { C, V, I, S, X } with metadata
-   - Include rawEvent, blockType, actorID, villagerID, timestamp
-   - Include isNearHome flag in metadata for debugging
-   - Validate vector values are in range [-1, 1]
-   - Add debugLog() call for DEBUG_MODE
+- [ ] **Create SemanticVector output packet**
+  - Package vector { C, V, I, S, X } with metadata
+  - Include rawEvent, blockType, actorID, villagerID, timestamp
+  - Include isNearHome flag in metadata for debugging
+  - Validate vector values are in range [-1, 1]
+  - Add debugLog() call for DEBUG_MODE
 
-6. **Output SemanticVector to Layer 3**
-   - Pass vector packet to Layer 3 sequencer
-   - Log vector to console if DEBUG_MODE enabled
-   - Track vector count for performance monitoring
-   - Handle errors gracefully (fallback to neutral vector)
+- [ ] **Output SemanticVector to Layer 3**
+  - Pass vector packet to Layer 3 sequencer
+  - Log vector to console if DEBUG_MODE enabled
+  - Track vector count for performance monitoring
+  - Handle errors gracefully (fallback to neutral vector)
 
 ---
 
@@ -117,36 +117,36 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ### Steps
 
-1. **Create episode buffer system (`scripts/layers/layer3_sequencer.js`)**
-   - Maintain Map of villagerID → current Episode object
-   - Episode object contains: episodeID, rawVectors[], vectorAverage, startTime, duration
-   - Initialize empty episode on first vector for each villager
-   - Append incoming vectors to current episode
+- [ ] **Create episode buffer system (`scripts/layers/layer3_sequencer.js`)**
+  - Maintain Map of villagerID → current Episode object
+  - Episode object contains: episodeID, rawVectors[], vectorAverage, startTime, duration
+  - Initialize empty episode on first vector for each villager
+  - Append incoming vectors to current episode
 
-2. **Implement vector averaging**
-   - Calculate running average of [C, V, I, S, X] across all vectors
-   - Update vectorAverage after each new vector append
-   - Use incremental averaging formula to avoid recalculating entire array
-   - Track vector count in episode
+- [ ] **Implement vector averaging**
+  - Calculate running average of [C, V, I, S, X] across all vectors
+  - Update vectorAverage after each new vector append
+  - Use incremental averaging formula to avoid recalculating entire array
+  - Track vector count in episode
 
-3. **Implement episode sealing logic**
-   - Time-based seal: 30 seconds of inactivity (no new vectors)
-   - Context-shift seal: New vector differs from average by >0.3 on any axis
-   - Manual seal: High-intensity event (I > 0.8) forces immediate seal
-   - Create EpisodeSummary packet with vectorAverage, duration, eventCount, sealReason
+- [ ] **Implement episode sealing logic**
+  - Time-based seal: 30 seconds of inactivity (no new vectors)
+  - Context-shift seal: New vector differs from average by >0.3 on any axis
+  - Manual seal: High-intensity event (I > 0.8) forces immediate seal
+  - Create EpisodeSummary packet with vectorAverage, duration, eventCount, sealReason
 
-4. **Add basic concept matching (DB lookup using Cosine Similarity)**
-   - Calculate Cosine Similarity between vectorAverage and known concepts in database using pgvector's `<=>` operator
-   - If similarity > 0.8 (cosine distance < 0.2), tag episode with matching concept_id
-   - Cosine Similarity focuses on directional alignment (intent) rather than magnitude (intensity)
-   - If no match, tag as "unknown" for LLM labeling later
-   - Query PostgreSQL via HTTP GET /api/memory/concepts with ORDER BY semantic_vector <=> $1 LIMIT 1
+- [ ] **Add basic concept matching (DB lookup using Cosine Similarity)**
+  - Calculate Cosine Similarity between vectorAverage and known concepts in database using pgvector's `<=>` operator
+  - If similarity > 0.8 (cosine distance < 0.2), tag episode with matching concept_id
+  - Cosine Similarity focuses on directional alignment (intent) rather than magnitude (intensity)
+  - If no match, tag as "unknown" for LLM labeling later
+  - Query PostgreSQL via HTTP GET /api/memory/concepts with ORDER BY semantic_vector <=> $1 LIMIT 1
 
-5. **Output EpisodeSummary to Layer 4**
-   - Pass sealed episode to Layer 4 for Working Memory update
-   - Clear episode buffer for this villager
-   - Add debugLog() with episode details
-   - Start new episode buffer immediately
+- [ ] **Output EpisodeSummary to Layer 4**
+  - Pass sealed episode to Layer 4 for Working Memory update
+  - Clear episode buffer for this villager
+  - Add debugLog() with episode details
+  - Start new episode buffer immediately
 
 ---
 
@@ -156,42 +156,42 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ### Steps
 
-1. **Implement villager registration (`scripts/layers/layer4_working_memory.js`)**
-   - Create registerVillager(villagerEntity) function
-   - Extract villager location, profession, and entity ID
-   - Send HTTP POST to /api/villagers/register with villager data
-   - Only register if villager is AI-tagged and not already registered
-   - Run registration check on world load for all AI villagers
+- [ ] **Implement villager registration (`scripts/layers/layer4_working_memory.js`)**
+  - Create registerVillager(villagerEntity) function
+  - Extract villager location, profession, and entity ID
+  - Send HTTP POST to /api/villagers/register with villager data
+  - Only register if villager is AI-tagged and not already registered
+  - Run registration check on world load for all AI villagers
 
-2. **Implement Working Memory update**
-   - Receive EpisodeSummary from Layer 3
-   - Update villager's currentMood to match vectorAverage
-   - Update currentFocus to actorID from episode
-   - Set shockState if episode has high Intensity (I > 0.8)
+- [ ] **Implement Working Memory update**
+  - Receive EpisodeSummary from Layer 3
+  - Update villager's currentMood to match vectorAverage
+  - Update currentFocus to actorID from episode
+  - Set shockState if episode has high Intensity (I > 0.8)
 
-3. **Write to DynamicProperties**
-   - Use setWorkingMemory() helper to write all WM properties
-   - Set wm_needsSync flag to true
-   - Update wm_lastUpdate timestamp
-   - Verify entity.isValid() before writing
+- [ ] **Write to DynamicProperties**
+  - Use setWorkingMemory() helper to write all WM properties
+  - Set wm_needsSync flag to true
+  - Update wm_lastUpdate timestamp
+  - Verify entity.isValid() before writing
 
-4. **Create debounced sync loop**
-   - Run system.runInterval every 100 ticks (5 seconds)
-   - For each villager, check wm_needsSync flag
-   - If true, send HTTP POST to /api/memory/sync with Working Memory state
-   - Clear wm_needsSync only after successful response
+- [ ] **Create debounced sync loop**
+  - Run system.runInterval every 100 ticks (5 seconds)
+  - For each villager, check wm_needsSync flag
+  - If true, send HTTP POST to /api/memory/sync with Working Memory state
+  - Clear wm_needsSync only after successful response
 
-5. **Handle sync failures**
-   - Catch network errors and retry on next interval
-   - Track consecutive failures in wm_syncFailureCount
-   - After 3 failures, log error and set wm_networkStatus to "offline"
-   - Retry connection check every 60 seconds
+- [ ] **Handle sync failures**
+  - Catch network errors and retry on next interval
+  - Track consecutive failures in wm_syncFailureCount
+  - After 3 failures, log error and set wm_networkStatus to "offline"
+  - Retry connection check every 60 seconds
 
-6. **Output ActiveAttentionState to Layer 5**
-   - Create packet with villagerID, currentMood, currentFocus, shockState
-   - Send via HTTP POST (non-blocking)
-   - Log sync success/failure if DEBUG_MODE enabled
-   - Continue game loop regardless of sync status
+- [ ] **Output ActiveAttentionState to Layer 5**
+  - Create packet with villagerID, currentMood, currentFocus, shockState
+  - Send via HTTP POST (non-blocking)
+  - Log sync success/failure if DEBUG_MODE enabled
+  - Continue game loop regardless of sync status
 
 ---
 
@@ -201,41 +201,41 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ### Steps
 
-1. **Create villager registration endpoint (`nodeDB/routes/memory.js`)**
-   - POST /api/villagers/register accepts villager data (villagerID, home coordinates, profession)
-   - Check if villager already exists (idempotent operation)
-   - INSERT into villagers table with created_at timestamp
-   - Return success status and villagerID
+- [ ] **Create villager registration endpoint (`nodeDB/routes/memory.js`)**
+  - POST /api/villagers/register accepts villager data (villagerID, home coordinates, profession)
+  - Check if villager already exists (idempotent operation)
+  - INSERT into villagers table with created_at timestamp
+  - Return success status and villagerID
 
-2. **Create episode write endpoint**
-   - POST /api/memory/episode accepts EpisodeSummary
-   - Validate villagerID exists in villagers table (FK constraint)
-   - Call writeEpisode() query function
-   - Return episodeID and timestamp in response
+- [ ] **Create episode write endpoint**
+  - POST /api/memory/episode accepts EpisodeSummary
+  - Validate villagerID exists in villagers table (FK constraint)
+  - Call writeEpisode() query function
+  - Return episodeID and timestamp in response
 
-3. **Create episode write query (`nodeDB/queries/episodes.js`)**
-   - Connect to pool and start transaction
-   - INSERT episode data into episodes table
-   - UPDATE relationships table (increment interaction_count, initialize if new)
-   - COMMIT transaction and return result
+- [ ] **Create episode write query (`nodeDB/queries/episodes.js`)**
+  - Connect to pool and start transaction
+  - INSERT episode data into episodes table
+  - UPDATE relationships table (increment interaction_count, initialize if new)
+  - COMMIT transaction and return result
 
-4. **Create Working Memory sync endpoint**
-   - POST /api/memory/sync accepts Working Memory state
-   - Use UPSERT logic (INSERT ... ON CONFLICT DO UPDATE)
-   - Update working_memory table with latest mood values
-   - Return success status
+- [ ] **Create Working Memory sync endpoint**
+  - POST /api/memory/sync accepts Working Memory state
+  - Use UPSERT logic (INSERT ... ON CONFLICT DO UPDATE)
+  - Update working_memory table with latest mood values
+  - Return success status
 
-5. **Create concepts lookup endpoint**
-   - GET /api/memory/concepts returns all known concepts
-   - Return concept_id, name, and vector_signature for matching
-   - Cache results in memory for fast lookups (refresh every 60s)
-   - Add pagination support (limit + offset)
+- [ ] **Create concepts lookup endpoint**
+  - GET /api/memory/concepts returns all known concepts
+  - Return concept_id, name, and vector_signature for matching
+  - Cache results in memory for fast lookups (refresh every 60s)
+  - Add pagination support (limit + offset)
 
-6. **Add request validation middleware (`nodeDB/middleware/validate.js`)**
-   - Check villagerID is present and valid string
-   - Check episodeSummary has vectorAverage object
-   - Validate vector values are numbers in range [-1, 1]
-   - Return 400 error for invalid requests
+- [ ] **Add request validation middleware (`nodeDB/middleware/validate.js`)**
+  - Check villagerID is present and valid string
+  - Check episodeSummary has vectorAverage object
+  - Validate vector values are numbers in range [-1, 1]
+  - Return 400 error for invalid requests
 
 ---
 
@@ -245,35 +245,35 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ### Steps
 
-1. **Create Brain Scheduler (`nodeDB/brain/scheduler.js`)**
-   - Initialize in-memory queue for LLM requests
-   - Create enqueue(request) method that adds to queue and sorts by priority
-   - Create processQueue() method that handles requests sequentially
-   - Store pending intents in Map (villagerID → IntentPacket)
+- [ ] **Create Brain Scheduler (`nodeDB/brain/scheduler.js`)**
+  - Initialize in-memory queue for LLM requests
+  - Create enqueue(request) method that adds to queue and sorts by priority
+  - Create processQueue() method that handles requests sequentially
+  - Store pending intents in Map (villagerID → IntentPacket)
 
-2. **Create brain request endpoint (`nodeDB/routes/brain.js`)**
-   - POST /api/brain/request accepts villagerID, actorID, trigger
-   - Enqueue request in Brain Scheduler
-   - Return { status: "queued", requestID, estimatedWaitTime }
-   - Don't wait for LLM response (immediate return)
+- [ ] **Create brain request endpoint (`nodeDB/routes/brain.js`)**
+  - POST /api/brain/request accepts villagerID, actorID, trigger
+  - Enqueue request in Brain Scheduler
+  - Return { status: "queued", requestID, estimatedWaitTime }
+  - Don't wait for LLM response (immediate return)
 
-3. **Create prompt builder (`nodeDB/brain/prompt_builder.js`)**
-   - Fetch last 3 episodes for villagerID from PostgreSQL
-   - Fetch relationship score with actorID
-   - Build simple prompt: "You are Villager X. Player Y just [action]. Respond."
-   - Keep prompt under 512 tokens for fast inference
+- [ ] **Create prompt builder (`nodeDB/brain/prompt_builder.js`)**
+  - Fetch last 3 episodes for villagerID from PostgreSQL
+  - Fetch relationship score with actorID
+  - Build simple prompt: "You are Villager X. Player Y just [action]. Respond."
+  - Keep prompt under 512 tokens for fast inference
 
-4. **Integrate LLM inference in Brain Scheduler**
-   - Call callLLM() with constructed prompt
-   - Parse LLM response as JSON (extract action and speechText)
-   - Create IntentPacket { action, speechText, targetPlayerID }
-   - Store in pendingIntents Map with status: "ready"
+- [ ] **Integrate LLM inference in Brain Scheduler**
+  - Call callLLM() with constructed prompt
+  - Parse LLM response as JSON (extract action and speechText)
+  - Create IntentPacket { action, speechText, targetPlayerID }
+  - Store in pendingIntents Map with status: "ready"
 
-5. **Create polling endpoint**
-   - GET /api/brain/poll?villagerID=X checks pendingIntents Map
-   - If intent is ready, return { status: "ready", intentPacket }
-   - If not ready, return { status: "waiting" }
-   - Remove intent from Map after it's consumed (single use)
+- [ ] **Create polling endpoint**
+  - GET /api/brain/poll?villagerID=X checks pendingIntents Map
+  - If intent is ready, return { status: "ready", intentPacket }
+  - If not ready, return { status: "waiting" }
+  - Remove intent from Map after it's consumed (single use)
 
 ---
 
@@ -283,35 +283,35 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ### Steps
 
-1. **Create polling loop (`scripts/layers/layer7_action_layer.js`)**
-   - Run system.runInterval every 40 ticks (2 seconds)
-   - For each AI-tagged villager, send GET /api/brain/poll
-   - Parse response and check if status is "ready"
-   - If ready, extract intentPacket and execute
+- [ ] **Create polling loop (`scripts/layers/layer7_action_layer.js`)**
+  - Run system.runInterval every 40 ticks (2 seconds)
+  - For each AI-tagged villager, send GET /api/brain/poll
+  - Parse response and check if status is "ready"
+  - If ready, extract intentPacket and execute
 
-2. **Implement action dispatcher**
-   - Create executeIntent(villagerEntity, intentPacket) function
-   - Switch on intentPacket.action (speak, idle)
-   - For "speak": display text via targetPlayer.onScreenDisplay.setActionBar()
-   - For "idle": do nothing (villager continues current animation)
+- [ ] **Implement action dispatcher**
+  - Create executeIntent(villagerEntity, intentPacket) function
+  - Switch on intentPacket.action (speak, idle)
+  - For "speak": display text via targetPlayer.onScreenDisplay.setActionBar()
+  - For "idle": do nothing (villager continues current animation)
 
-3. **Add speak action handler**
-   - Get target player entity via world.getEntity(targetPlayerID)
-   - Format message: `§e[VillagerName]: ${speechText}`
-   - Display via onScreenDisplay.setActionBar() (5 second duration)
-   - Log speech if DEBUG_MODE enabled
+- [ ] **Add speak action handler**
+  - Get target player entity via world.getEntity(targetPlayerID)
+  - Format message: `§e[VillagerName]: ${speechText}`
+  - Display via onScreenDisplay.setActionBar() (5 second duration)
+  - Log speech if DEBUG_MODE enabled
 
-4. **Add timeout fallback**
-   - Track polling attempts in DynamicProperty (wm_pollingAttempts)
-   - After 10 failed polls (20 seconds), fall back to idle
-   - Reset polling attempts counter on successful intent retrieval
-   - Log timeout if DEBUG_MODE enabled
+- [ ] **Add timeout fallback**
+  - Track polling attempts in DynamicProperty (wm_pollingAttempts)
+  - After 10 failed polls (20 seconds), fall back to idle
+  - Reset polling attempts counter on successful intent retrieval
+  - Log timeout if DEBUG_MODE enabled
 
-5. **Test action execution**
-   - Trigger event near villager (place diamond block)
-   - Wait 2-5 seconds for LLM response
-   - Verify villager speaks response via ActionBar
-   - Test with multiple villagers simultaneously
+- [ ] **Test action execution**
+  - Trigger event near villager (place diamond block)
+  - Wait 2-5 seconds for LLM response
+  - Verify villager speaks response via ActionBar
+  - Test with multiple villagers simultaneously
 
 ---
 
@@ -321,35 +321,35 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ### Steps
 
-1. **Setup test environment**
-   - Start PostgreSQL database
-   - Start Node.js backend (npm start)
-   - Start llama.cpp server
-   - Start Minecraft Bedrock server with behavior pack
+- [ ] **Setup test environment**
+  - Start PostgreSQL database
+  - Start Node.js backend (npm start)
+  - Start llama.cpp server
+  - Start Minecraft Bedrock server with behavior pack
 
-2. **Spawn test villager**
-   - Spawn villager_v2 in overworld
-   - Tag with ai_villager tag
-   - Initialize Working Memory via layer4_working_memory.js
-   - Verify villager appears in logs if DEBUG_MODE enabled
+- [ ] **Spawn test villager**
+  - Spawn villager_v2 in overworld
+  - Tag with ai_villager tag
+  - Initialize Working Memory via layer4_working_memory.js
+  - Verify villager appears in logs if DEBUG_MODE enabled
 
-3. **Trigger test event**
-   - Player places diamond block within 10 blocks of villager
-   - Verify Layer 1 detects event (check console logs)
-   - Verify Layer 2 calculates vector (check DEBUG logs)
-   - Verify Layer 3 appends vector to episode
+- [ ] **Trigger test event**
+  - Player places diamond block within 10 blocks of villager
+  - Verify Layer 1 detects event (check console logs)
+  - Verify Layer 2 calculates vector (check DEBUG logs)
+  - Verify Layer 3 appends vector to episode
 
-4. **Wait for episode seal and LLM response**
-   - Place 2-3 more blocks to trigger context shift seal
-   - Verify Layer 4 updates Working Memory (check DynamicProperties)
-   - Verify Layer 5 writes episode to PostgreSQL (check backend logs)
-   - Wait 2-5 seconds for LLM inference
+- [ ] **Wait for episode seal and LLM response**
+  - Place 2-3 more blocks to trigger context shift seal
+  - Verify Layer 4 updates Working Memory (check DynamicProperties)
+  - Verify Layer 5 writes episode to PostgreSQL (check backend logs)
+  - Wait 2-5 seconds for LLM inference
 
-5. **Verify villager response**
-   - Confirm Layer 7 polls and retrieves IntentPacket
-   - Confirm villager speaks response via ActionBar
-   - Check backend logs for complete request lifecycle
-   - Test with different event types (break block, chat, etc.)
+- [ ] **Verify villager response**
+  - Confirm Layer 7 polls and retrieves IntentPacket
+  - Confirm villager speaks response via ActionBar
+  - Check backend logs for complete request lifecycle
+  - Test with different event types (break block, chat, etc.)
 
 ---
 
