@@ -25,11 +25,11 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
 
 - [x] **1. Install PostgreSQL 15+ and create database**
   - Install PostgreSQL on host machine
-  - Create `villager_memory` database
+  - Create `immersive_villagers` database
   - Create `minecraft_ai` user with secure password
   - Grant permissions to user
 
-- [ ] **2. Create base schema file (`nodeDB/db/schema.sql`)**
+- [x] **2. Create base schema file (`nodeDB/db/schema.sql`)**
   - Enable pgvector extension for high-performance vector operations
   - Define `villagers` table (villager_id PRIMARY KEY, name, home_x/y/z, profession, created_at, last_seen, is_active)
   - Define `concepts` table (concept_id PRIMARY KEY, name, semantic_vector VECTOR(5), discovery_count)
@@ -40,8 +40,8 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
   - Add indexes on villager_id, timestamp, and foreign key columns
   - Add ON DELETE CASCADE for all foreign keys
 
-- [ ] **3. Apply schema to database**
-  - Run schema.sql using psql command: `psql -U minecraft_ai -d villager_memory -f schema.sql`
+- [x] **3. Apply schema to database**
+  - Run schema.sql using psql command: `psql -U minecraft_ai -d immersive_villagers -f schema.sql`
   - Verify tables exist with `\dt` command (should show 6 tables)
   - Verify foreign keys with `\d episodes` (should show REFERENCES villagers)
   - Test INSERT/SELECT operations manually

@@ -1,5 +1,20 @@
 -- Enable pgvector extension for high-performance vector operations
 CREATE EXTENSION IF NOT EXISTS vector;
+DROP TABLE IF EXISTS villagers;
+DROP TABLE IF EXISTS concepts;
+DROP TABLE IF EXISTS villager_discoveries;
+DROP TABLE IF EXISTS episodes;
+DROP TABLE IF EXISTS relationships;
+DROP TABLE IF EXISTS working_memory;
+DROP INDEX IF EXISTS idx_villagers_active;
+DROP INDEX IF EXISTS idx_episodes_villager;
+DROP INDEX IF EXISTS idx_episodes_actor;
+DROP INDEX IF EXISTS idx_relationships_villager;
+DROP INDEX IF EXISTS idx_relationships_actor;
+DROP INDEX IF EXISTS idx_discoveries_villager;
+DROP INDEX IF EXISTS idx_discoveries_concept;
+DROP INDEX IF EXISTS idx_concepts_vector;
+DROP INDEX IF EXISTS idx_episodes_vector;
 
 -- Core villager identity table
 CREATE TABLE villagers (
