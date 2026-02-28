@@ -46,7 +46,7 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
   - Verify foreign keys with `\d episodes` (should show REFERENCES villagers)
   - Test INSERT/SELECT operations manually
 
-- [ ] **4. Create pg-pool configuration (`nodeDB/db/pool.js`)**
+- [x] **4. Create pg-pool configuration (`nodeDB/db/pool.js`)**
   - Initialize connection pool with max 20 connections
   - Set idle timeout (30s) and connection timeout (2s)
   - Add error event listeners for pool monitoring
