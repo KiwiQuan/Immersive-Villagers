@@ -52,7 +52,7 @@ Establish the **barebones infrastructure** required for the Immersive Villager A
   - Add error event listeners for pool monitoring
   - Export pool instance for use in queries
 
-- [ ] **5. Test database connectivity**
+- [x] **5. Test database connectivity**
   - Write simple Node.js script to connect to pool
   - Execute test INSERT into villagers table (must insert villager before episodes)
   - Execute test INSERT into episodes table with valid villager_id
