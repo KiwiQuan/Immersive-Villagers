@@ -164,7 +164,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-- [ ] **1. Initialize Node.js project (`nodeDB/`)**
+- [x] **1. Initialize Node.js project (`nodeDB/`)**
   - Create package.json with dependencies (express, pg, pino, axios, dotenv)
   - Create .env file with database credentials and configuration
   - Create .gitignore to exclude node_modules and .env
