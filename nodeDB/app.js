@@ -1,5 +1,6 @@
 import express from "express";
 import debugRoutes from "./routes/debug.js";
+import logger from "./utils/logger.js";
 
 /**
  * Initializes and configures the Express application.
@@ -11,13 +12,19 @@ function createApp() {
   // JSON body parser middleware (1mb limit for security)
   app.use(express.json({ limit: "1mb" }));
 
-  // Request logging middleware
+  // Request logging middleware with Pino
   app.use((req, res, next) => {
     const start = Date.now();
     res.on("finish", () => {
       const duration = Date.now() - start;
-      console.log(
-        `[${new Date().toISOString()}] ${req.method} ${req.path} ${res.statusCode} ${duration}ms`
+      logger.info(
+        {
+          method: req.method,
+          path: req.path,
+          statusCode: res.statusCode,
+          duration,
+        },
+        "HTTP Request",
       );
     });
     next();
@@ -27,10 +34,10 @@ function createApp() {
   app.use((req, res, next) => {
     res.setTimeout(5000, () => {
       if (!res.headersSent) {
-        console.warn(`[Express] Request timeout: ${req.path}`);
-        res.status(408).json({ 
-          status: "timeout", 
-          message: "Request took too long" 
+        logger.warn({ path: req.path }, "Request timeout");
+        res.status(408).json({
+          status: "timeout",
+          message: "Request took too long",
         });
       }
     });
@@ -67,8 +74,8 @@ function createApp() {
 
   // Global error handler
   app.use((err, req, res, next) => {
-    console.error(`[Express] Unhandled error:`, err);
-    
+    logger.error({ error: err.message, stack: err.stack }, "Unhandled error");
+
     if (!res.headersSent) {
       res.status(500).json({
         status: "error",
@@ -82,4 +89,5 @@ function createApp() {
   return app;
 }
 
+export { logger };
 export default createApp;

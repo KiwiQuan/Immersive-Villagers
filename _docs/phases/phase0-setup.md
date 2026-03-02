@@ -182,13 +182,13 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
   - Test llama.cpp connection (if available)
   - Return comprehensive health status
 
-- [ ] **4. Create Pino logger (`nodeDB/utils/logger.js`)**
+- [x] **4. Create Pino logger (`nodeDB/utils/logger.js`)**
   - Initialize Pino with level from LOG_LEVEL env var
   - Configure pino-pretty for development mode
   - Add log rotation setup (10MB files, daily rotation)
   - Export logger instance
 
-- [ ] **5. Start server and test (`nodeDB/server.js`)**
+- [x] **5. Start server and test (`nodeDB/server.js`)**
   - Create server.js that imports app and starts listening on port 3000
   - Test health endpoint with curl command
   - Verify logs are written to console/file
