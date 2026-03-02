@@ -1,9 +1,6 @@
 {
   "name": "immersive_villagers",
   "type": "module",
-  "imports": {
-    "#*": "./*.js"
-  },
   "scripts": {
     "start": "node --env-file=.env server.js",
     "dev": "node --watch --env-file=.env server.js",

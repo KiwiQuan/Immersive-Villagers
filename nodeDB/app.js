@@ -1,4 +1,5 @@
 import express from "express";
+import debugRoutes from "./routes/debug.js";
 
 /**
  * Initializes and configures the Express application.
@@ -36,15 +37,15 @@ function createApp() {
     next();
   });
 
-  // Route structure (placeholders - will be implemented in later steps)
-  // Layer 5: Memory routes (Episode writes, Working Memory sync)
+  // Route structure
+  // Debug routes (Health check, diagnostics)
+  app.use("/api/debug", debugRoutes);
+
+  // Layer 5: Memory routes (Episode writes, Working Memory sync) - Phase 0 Feature 4+
   // app.use("/api/memory", memoryRoutes);
 
-  // Layer 6: Brain routes (LLM queue, polling)
+  // Layer 6: Brain routes (LLM queue, polling) - Phase 0 Feature 4+
   // app.use("/api/brain", brainRoutes);
-
-  // Debug routes (Health check, diagnostics)
-  // app.use("/api/debug", debugRoutes);
 
   // Root health check endpoint (basic connectivity test)
   app.get("/", (req, res) => {

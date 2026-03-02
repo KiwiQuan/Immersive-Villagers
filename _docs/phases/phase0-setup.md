@@ -170,13 +170,13 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
   - Create .gitignore to exclude node_modules and .env
   - Run npm install to download dependencies
 
-- [ ] **2. Create Express app (`nodeDB/app.js`)**
+- [x] **2. Create Express app (`nodeDB/app.js`)**
   - Initialize Express with JSON body parser (1mb limit)
   - Add basic middleware stack (logger, error handler)
   - Define route structure (/api/memory, /api/brain, /api/debug)
   - Export app instance
 
-- [ ] **3. Create health check endpoint (`nodeDB/routes/debug.js`)**
+- [x] **3. Create health check endpoint (`nodeDB/routes/debug.js`)**
   - GET /api/health returns { status: "online", timestamp }
   - Test database connection and return pool stats
   - Test llama.cpp connection (if available)
