@@ -13,15 +13,16 @@ function startServer() {
         port: PORT,
         env: process.env.NODE_ENV || "development",
         debugMode: process.env.DEBUG_MODE || "false",
+        aiMode: process.env.AI_MODE || "MONOLITHIC",
       },
-      "Server started"
+      "Server started",
     );
   });
 
   // Graceful shutdown handler
   function shutdown(signal) {
     logger.info({ signal }, "Shutting down gracefully");
-    
+
     server.close(() => {
       logger.info("HTTP server closed");
       process.exit(0);
@@ -40,15 +41,15 @@ function startServer() {
 
   // Handle uncaught errors
   process.on("uncaughtException", (err) => {
-    logger.fatal({ error: err.message, stack: err.stack }, "Uncaught exception");
+    logger.fatal(
+      { error: err.message, stack: err.stack },
+      "Uncaught exception",
+    );
     process.exit(1);
   });
 
   process.on("unhandledRejection", (reason, promise) => {
-    logger.fatal(
-      { reason, promise },
-      "Unhandled promise rejection"
-    );
+    logger.fatal({ reason, promise }, "Unhandled promise rejection");
     process.exit(1);
   });
 }
