@@ -310,48 +310,144 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ---
 
-## Feature 6: DEBUG_MODE Toggle & Logging
+## Feature 6: Configuration Toggles (AI_MODE & DEBUG_MODE)
 
-**Deliverable:** DEBUG_MODE flag that can be toggled in-game to enable/disable detailed logging.
+**Deliverable:** Runtime-switchable AI architecture and debug logging system functional in MVP.
 
 ### Steps
 
-- [ ] **1. Create DEBUG_MODE toggle command (`scripts/utils/debug_logger.js`)**
+- [ ] **1. Create configuration router (`nodeDB/routes/config_router.js`)**
+  - Create GET /api/config/ai_mode endpoint (returns current AI_MODE)
+  - Create POST /api/config/ai_mode endpoint (toggles MONOLITHIC ↔ MICROSERVICES)
+  - Create GET /api/config/debug_mode endpoint (returns DEBUG_MODE state)
+  - Create POST /api/config/debug_mode endpoint (toggles DEBUG_MODE)
+  - Export getAIMode() and getDebugMode() helper functions
+
+- [ ] **2. Create in-game toggle commands (`scripts/commands/config_commands.js`)**
+  - Subscribe to scriptevent 'ai:toggle_mode' (accepts: monolithic | microservices)
+  - Subscribe to scriptevent 'ai:toggle_debug' (accepts: true | false)
+  - Send HTTP POST to backend to apply changes
+  - Update world.setDynamicProperty('DEBUG_MODE', state) for Script API side
+  - Broadcast confirmation message to all players
+
+- [ ] **3. Create debug logger (`scripts/utils/debug_logger.js`)**
   - Read DEBUG_MODE from world.getDynamicProperty('DEBUG_MODE')
   - Create debugLog(layer, message, data) function that checks flag
   - Create errorLog(layer, message, error) function (always logs)
+  - Create logInferenceTrace(layer, model, result, confidence, villagerID) for brain path visualization
   - Export logging functions with JSDoc
 
-- [ ] **2. Add in-game toggle command**
-  - Register custom command or use /scriptevent to toggle DEBUG_MODE
-  - Set world.setDynamicProperty('DEBUG_MODE', true/false)
-  - Broadcast confirmation message to all admins
-  - Log toggle event to console
+- [ ] **4. Implement inference trace buffer (backend)**
+  - Create in-memory Map: villagerID → traces[]
+  - Store last 50 inference results per villager (DEBUG_MODE only)
+  - Create GET /api/debug/inference_traces endpoint
+  - Auto-clear buffer when DEBUG_MODE disabled
 
-- [ ] **3. Add DEBUG_MODE logging to test scripts**
-  - Add debugLog() calls to HTTP test script
-  - Add debugLog() calls to DynamicProperties test script
-  - Enable DEBUG_MODE in-game
-  - Verify logs appear in Content Log
+- [ ] **5. Implement performance benchmarking**
+  - Create logGearLatency(gear, latency, operation) function
+  - Track Fast Gear latency (target: <5ms MONOLITHIC, <20ms MICROSERVICES)
+  - Track Slow Gear latency (target: <4s)
+  - Broadcast performance warnings when thresholds exceeded
 
-- [ ] **4. Sync DEBUG_MODE with backend**
-  - Create /api/debug/toggle endpoint in backend
-  - Accept DEBUG_MODE state from Script API
-  - Update LOG_LEVEL in Pino logger dynamically
-  - Return confirmation response
+- [ ] **6. Create debug endpoints (`nodeDB/routes/debug.js`)**
+  - GET /api/debug/status (system health, metrics, performance averages)
+  - GET /api/debug/villager/:villagerID (detailed villager state)
+  - POST /api/debug/simulate_event (inject test events)
+  - POST /api/debug/correct_concept (re-label concepts with re-vectorization)
 
-- [ ] **5. Test toggle functionality**
-  - Enable DEBUG_MODE in-game
-  - Verify Script API logs appear
-  - Verify backend switches to debug log level
-  - Disable DEBUG_MODE and confirm logs stop
+- [ ] **7. Test AI_MODE toggle**
+  - Start in MONOLITHIC mode
+  - Toggle to MICROSERVICES: `/scriptevent ai:toggle_mode microservices`
+  - Verify backend switches vector columns in queries
+  - Toggle back to MONOLITHIC and verify fallback works
+
+- [ ] **8. Test DEBUG_MODE features**
+  - Enable DEBUG_MODE: `/scriptevent ai:toggle_debug true`
+  - Trigger test event (place block near villager)
+  - Verify inference traces appear in ActionBar
+  - Verify performance metrics logged to console
+  - Check /api/debug/status endpoint returns metrics
+
+---
+
+## Feature 7: MICROSERVICES Mode Setup (Optional)
+
+**Deliverable:** Transformers.js models loaded and MICROSERVICES mode fully functional.
+
+**Note:** This feature is **optional** for MVP. The system works in MONOLITHIC mode without these models. Complete this feature to enable semantic understanding, fast intent routing, and advanced structure recognition.
+
+### Steps
+
+- [ ] **1. Install @xenova/transformers dependency**
+  - Navigate to nodeDB directory
+  - Run: `npm install @xenova/transformers`
+  - Verify package.json includes @xenova/transformers: ^2.17.0
+  - Check node_modules folder for successful installation
+
+- [ ] **2. Create model loader (`nodeDB/brain/model_loader.js`)**
+  - Import @xenova/transformers pipeline function
+  - Create initializeModels() async function
+  - Load all 4 models (MiniLM, DistilBERT, BERT-NER, T5-small)
+  - Export model instances and initialization function
+  - Add error handling for model loading failures
+
+- [ ] **3. Test model loading on server start**
+  - Update server.js to call initializeModels() before starting Express
+  - Set AI_MODE=MICROSERVICES in .env
+  - Start Node.js backend: `npm start`
+  - Wait for models to download (~500MB-1GB, first run only)
+  - Verify all 4 models load successfully (check console logs)
+  - Verify model loading completes in <30 seconds (after initial download)
+
+- [ ] **4. Create model wrapper modules**
+  - Create nodeDB/brain/vector_engine.js (MiniLM wrapper with caching)
+  - Create nodeDB/brain/intent_router.js (DistilBERT intent classifier)
+  - Create nodeDB/brain/episode_summarizer.js (T5-small summarizer)
+  - Create nodeDB/brain/ner_extractor.js (BERT-NER entity extractor)
+  - Each module exports async functions with JSDoc
+
+- [ ] **5. Test individual models**
+  - Test MiniLM: Generate embedding for "Steve placed a diamond block"
+  - Test DistilBERT: Classify intent of "Why are you following me?"
+  - Test T5-small: Summarize "Steve broke 5 logs. Steve crafted planks. Steve built a wall."
+  - Test BERT-NER: Extract entities from "Build a wall out of cobblestone"
+  - Verify all models return results within target latencies (<20ms, <50ms, <100ms, <30ms)
+
+- [ ] **6. Test mode switching with real models**
+  - Start in MONOLITHIC mode (AI_MODE=MONOLITHIC)
+  - Verify manual vectorization works (Layer 2 returns 5D vectors)
+  - Switch to MICROSERVICES: `/scriptevent ai:toggle_mode microservices`
+  - Trigger test event (place block near villager)
+  - Verify MiniLM generates 384D embedding
+  - Verify DistilBERT classifies intent
+  - Check concepts table for cached embeddings (deduplication)
+  - Switch back to MONOLITHIC and verify fallback works
+
+- [ ] **7. Test Fast Intent Routing**
+  - Enable DEBUG_MODE and MICROSERVICES mode
+  - Simulate aggressive event (player attacks villager)
+  - Verify DistilBERT classifies as "aggression" with >80% confidence
+  - Verify intent bypasses LLM (no 2-4s delay)
+  - Check inference trace shows: "L3: [DistilBERT] → Intent: aggression (95%)"
+  - Verify villager responds with flee action
+
+- [ ] **8. Performance comparison test**
+  - Run 50 test events in MONOLITHIC mode
+  - Record average Fast Gear latency (should be <5ms)
+  - Switch to MICROSERVICES mode
+  - Run same 50 test events
+  - Record average Fast Gear latency (should be <20ms)
+  - Compare LLM inference times (MICROSERVICES should be 50% faster due to shorter context)
 
 ---
 
 ## Testing Checklist
 
+**Core Infrastructure:**
 - [ ] PostgreSQL accepts connections and returns query results
-- [ ] All 6 tables created successfully (villagers, concepts, villager_discoveries, episodes, relationships, working_memory)
+- [ ] All base tables created successfully (villagers, concepts, villager_discoveries, episodes, relationships, working_memory)
+- [ ] Structure tables created (structure_templates, structure_blueprints, villager_world_map, build_tasks, pattern_observations)
+- [ ] Dual vector columns exist (semantic_vector_manual and semantic_vector_minilm)
 - [ ] Foreign key constraints work (cannot insert episode without villager)
 - [ ] ON DELETE CASCADE works (deleting villager removes related data)
 - [ ] Node.js backend responds to /api/health with 200 status
@@ -359,15 +455,31 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 - [ ] Script API can POST data to backend successfully
 - [ ] Script API can GET data from backend successfully
 - [ ] DynamicProperties persist across server restarts
-- [ ] DEBUG_MODE toggle works in both Script API and backend
 - [ ] Network errors are handled gracefully (no crashes)
 - [ ] Multiple concurrent HTTP requests work correctly
 - [ ] Pino logs are written to file with proper formatting
+
+**AI_MODE Configuration:**
+- [ ] AI_MODE toggle command works: `/scriptevent ai:toggle_mode microservices`
+- [ ] Backend /api/config/ai_mode endpoint responds correctly
+- [ ] MONOLITHIC mode uses semantic_vector_manual columns
+- [ ] MICROSERVICES mode uses semantic_vector_minilm columns
+- [ ] Transformers.js models load successfully (MICROSERVICES mode only)
+- [ ] Model loading takes <30 seconds on first startup
+
+**DEBUG_MODE Features:**
+- [ ] DEBUG_MODE toggle works in both Script API and backend
+- [ ] Inference traces appear in ActionBar when enabled
+- [ ] Performance metrics logged to console
+- [ ] GET /api/debug/status returns system health
+- [ ] Debug endpoints return 403 when DEBUG_MODE disabled
+- [ ] Debug buffers clear automatically when DEBUG_MODE disabled
 
 ---
 
 ## Known Limitations at End of Phase 0
 
+**Core System:**
 - No event filtering (Layer 1) implemented yet
 - No vectorization logic (Layer 2) exists
 - No episode grouping (Layer 3) implemented
@@ -378,6 +490,23 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 - Villager_discoveries table exists but unused (concept learning in Phase 1+)
 - System is infrastructure-only, not playable
 
+**AI Modes:**
+- AI_MODE toggle exists but only infrastructure is present
+- MONOLITHIC mode has no Layer 2 vectorization yet (Phase 1)
+- MICROSERVICES mode has models loaded but no Layer 2 integration yet (Phase 1)
+- Can toggle between modes but no functional difference yet (both inactive)
+
+**Structure System:**
+- All structure tables exist but are empty
+- No pattern detection logic implemented (Phase 1)
+- No building execution system (Phase 1)
+- Templates and blueprints can't be created yet
+
+**Debug:**
+- DEBUG_MODE toggle works but limited debug features available
+- Inference tracing not functional (no layers to trace yet)
+- Performance benchmarking exists but nothing to benchmark yet
+
 ---
 
 ## File Structure After Phase 0
@@ -385,12 +514,14 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 ```
 Immersive_Villagers BP/
 ├── scripts/
+│   ├── commands/
+│   │   └── config_commands.js               # AI_MODE & DEBUG_MODE toggle handlers
 │   ├── config/
 │   │   └── dynamic_properties_schema.js
 │   ├── utils/
 │   │   ├── dynamic_properties_helpers.js
 │   │   ├── network_helpers.js
-│   │   └── debug_logger.js
+│   │   └── debug_logger.js                  # Enhanced with inference tracing
 │   ├── layers/
 │   │   └── layer4_working_memory.js        # Initialization only
 │   ├── test_http.js                         # Test script (remove after Phase 0)
@@ -399,19 +530,29 @@ Immersive_Villagers BP/
 ├── nodeDB/
 │   ├── db/
 │   │   ├── pool.js
-│   │   └── schema.sql
+│   │   └── schema.sql                       # Updated with dual vector columns
 │   ├── routes/
-│   │   └── debug.js                         # Health check only
+│   │   ├── debug.js                         # Enhanced debug endpoints
+│   │   └── config_router.js                 # NEW: AI_MODE & DEBUG_MODE toggles
 │   ├── brain/
-│   │   └── llm_client.js
+│   │   ├── llm_client.js
+│   │   ├── model_loader.js                  # NEW: Transformers.js (MICROSERVICES mode)
+│   │   ├── vector_engine.js                 # NEW: MiniLM wrapper
+│   │   ├── intent_router.js                 # NEW: DistilBERT intent classifier
+│   │   ├── episode_summarizer.js            # NEW: T5-small summarizer
+│   │   └── ner_extractor.js                 # NEW: BERT NER
 │   ├── utils/
 │   │   └── logger.js
 │   ├── app.js
 │   ├── server.js
-│   ├── package.json
-│   └── .env
+│   ├── package.json                         # Updated with @xenova/transformers
+│   └── .env                                 # Added AI_MODE config
 │
 └── _docs/
+    ├── Database_Schema.md                   # NEW: Complete schema reference
+    ├── AI_Modes.md                          # NEW: MONOLITHIC vs MICROSERVICES
+    ├── Structure_System.md                  # NEW: Building & learning
+    ├── Debug_System.md                      # NEW: Enhanced DEBUG_MODE
     └── phases/
         └── phase0-setup.md                  # THIS FILE
 ```

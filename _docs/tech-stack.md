@@ -4,10 +4,15 @@
 
 - **Game-Side:** JavaScript (Minecraft Script API)
 - **Backend:** Node.js with Express
-- **Database:** PostgreSQL with pg-pool (Connection Pooling)
+- **Database:** PostgreSQL with pg-pool (Connection Pooling) + pgvector
 - **State Management:** Write-Through Cache (DynamicProperties → PostgreSQL)
 - **Logging:** Pino (High-Performance Structured Logging)
 - **LLM:** llama.cpp (Local Inference)
+- **Small Models (MICROSERVICES mode):** @xenova/transformers
+  - **Vectorization:** Xenova/all-MiniLM-L6-v2 (384D embeddings)
+  - **Intent Classification:** Xenova/distilbert-base-uncased-mnli
+  - **Entity Recognition:** Xenova/bert-base-multilingual-cased-ner-slavic
+  - **Summarization:** Xenova/t5-small
 
 ---
 
@@ -2151,9 +2156,162 @@ function parseLLMResponse(rawResponse) {
 
 ---
 
-## Next Steps
+## 6. AI Mode Architecture: Dual System Support
 
-### Phase 1: Backend Infrastructure Setup
+### Challenge
+
+Support two runtime-switchable architectures (MONOLITHIC and MICROSERVICES) without schema changes or server restarts.
+
+### ✅ Selected Technology: Runtime Toggle with Dual Vector Storage
+
+**Why:**
+
+- **Flexibility:** Switch between manual 5D vectors and semantic 384D embeddings at runtime
+- **No Migration:** Both vector types stored in database simultaneously
+- **Performance Comparison:** A/B test both modes without code changes
+- **Fallback:** MONOLITHIC mode as backup if Transformers.js models fail
+
+**Architecture:**
+
+```javascript
+// Backend determines which vector to use based on AI_MODE
+const AI_MODE = process.env.AI_MODE || 'MONOLITHIC';
+
+function getVectorColumn() {
+  return AI_MODE === 'MONOLITHIC' ? 'semantic_vector_manual' : 'semantic_vector_minilm';
+}
+
+// Query episodes using active mode's vector
+const episodes = await pool.query(
+  `SELECT * FROM episodes ORDER BY ${getVectorColumn()} <=> $1 LIMIT 10`,
+  [vectorData]
+);
+```
+
+**Dependencies (MICROSERVICES Mode):**
+
+```json
+{
+  "dependencies": {
+    "@xenova/transformers": "^2.17.0"
+  }
+}
+```
+
+**Model Loading:**
+
+```javascript
+const { pipeline } = require('@xenova/transformers');
+
+async function initializeModels() {
+  // Load models on server start (MICROSERVICES mode only)
+  if (AI_MODE !== 'MICROSERVICES') return;
+  
+  const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+  const intentClassifier = await pipeline('zero-shot-classification', 'Xenova/distilbert-base-uncased-mnli');
+  const nerExtractor = await pipeline('token-classification', 'Xenova/bert-base-multilingual-cased-ner-slavic');
+  const summarizer = await pipeline('summarization', 'Xenova/t5-small');
+  
+  return { embedder, intentClassifier, nerExtractor, summarizer };
+}
+```
+
+**Performance:**
+
+| Model | Size | Load Time | Inference Latency |
+|-------|------|-----------|------------------|
+| all-MiniLM-L6-v2 | ~90MB | 2-3s | <20ms |
+| distilbert-mnli | ~250MB | 3-5s | <50ms |
+| bert-ner-slavic | ~700MB | 5-8s | <30ms |
+| t5-small | ~240MB | 3-5s | <100ms |
+| **Total** | **~1.3GB** | **13-21s** | **<200ms** |
+
+---
+
+## 7. Structure Learning System
+
+### Challenge
+
+Allow villagers to observe, learn, and reproduce building patterns without hardcoding every structure type.
+
+### ✅ Selected Technology: Recipe-Based Grammar + Semantic Vectors
+
+**Why:**
+
+- **Scalable:** Stores reusable "recipes" instead of full coordinate maps
+- **Generalizable:** MiniLM embeddings enable cross-material recognition (stone wall ≈ cobblestone wall)
+- **Efficient:** 85% storage reduction vs. coordinate-based approach
+- **Shareable:** All villagers access shared template pool
+
+**Architecture:**
+
+```sql
+-- Structure templates: Small building units (recipes)
+CREATE TABLE structure_templates (
+  id SERIAL PRIMARY KEY,
+  label TEXT NOT NULL,
+  pattern_hash TEXT UNIQUE,              -- Spatial hash (MONOLITHIC mode)
+  embedding VECTOR(384),                 -- MiniLM vector (MICROSERVICES mode)
+  instructions JSONB NOT NULL,           -- Block placement sequence
+  dimensions JSONB,
+  created_by TEXT,
+  observation_count INTEGER DEFAULT 1
+);
+
+-- Structure blueprints: High-level assembly guides
+CREATE TABLE structure_blueprints (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  embedding VECTOR(384),
+  composition JSONB NOT NULL,            -- List of template IDs + offsets
+  tags JSONB,
+  functional_zones JSONB,
+  created_by TEXT,
+  build_count INTEGER DEFAULT 0
+);
+
+-- Villager's subjective world map
+CREATE TABLE villager_world_map (
+  id SERIAL PRIMARY KEY,
+  villager_id TEXT NOT NULL REFERENCES villagers(villager_id) ON DELETE CASCADE,
+  structure_id INTEGER REFERENCES structure_blueprints(id),
+  anchor_x INT NOT NULL,
+  anchor_y INT NOT NULL,
+  anchor_z INT NOT NULL,
+  confidence REAL DEFAULT 1.0,
+  last_observed BIGINT NOT NULL
+);
+
+-- Build task queue
+CREATE TABLE build_tasks (
+  id SERIAL PRIMARY KEY,
+  villager_id TEXT NOT NULL REFERENCES villagers(villager_id) ON DELETE CASCADE,
+  blueprint_id INTEGER REFERENCES structure_blueprints(id),
+  template_id INTEGER REFERENCES structure_templates(id),
+  anchor_x INT NOT NULL,
+  anchor_y INT NOT NULL,
+  anchor_z INT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  current_step INTEGER DEFAULT 0,
+  total_steps INTEGER NOT NULL,
+  trigger_source TEXT
+);
+```
+
+**Learning Flow:**
+
+1. **Real-Time:** Villager observes player placing blocks → Detects repeating patterns → Saves as template
+2. **Post-Construction:** Player teaches villager complete structure → System analyzes functional zones → Saves as blueprint
+
+**Building Flow:**
+
+1. Player commands: "Build a house" → NER extracts structure type → Queries blueprints table
+2. Autonomous needs: Rain detected → Villager needs shelter → Queries blueprints with `tags: ['shelter']`
+3. Task execution: Villager pathfinds to position → Places blocks (4-block reach) → Updates task progress
+
+---
+
+## Next Steps
 
 1. **Set Up PostgreSQL:**
 
@@ -2179,8 +2337,40 @@ function parseLLMResponse(rawResponse) {
    ```bash
    mkdir nodeDB && cd nodeDB
    npm init -y
+   
+   # MONOLITHIC mode dependencies (MVP)
    npm install express pg pino axios dotenv
+   
+   # MICROSERVICES mode additional dependencies (Phase 2+)
+   npm install @xenova/transformers
    ```
+
+**Complete package.json (MICROSERVICES mode):**
+
+```json
+{
+  "name": "immersive-villager-backend",
+  "version": "1.0.0",
+  "description": "Backend server for Immersive Villager AI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "NODE_ENV=development DEBUG_MODE=true node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "pg": "^8.11.0",
+    "pino": "^8.14.1",
+    "pino-pretty": "^10.0.0",
+    "axios": "^1.4.0",
+    "dotenv": "^16.3.1",
+    "@xenova/transformers": "^2.17.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+```
 
 4. **Configure Environment Variables:**
    ```env
@@ -2195,6 +2385,7 @@ function parseLLMResponse(rawResponse) {
    NODE_ENV=production
    PORT=3000
    LLAMA_URL=http://localhost:8080
+   AI_MODE=MONOLITHIC
    ```
 
 ### Phase 2: LLM Setup

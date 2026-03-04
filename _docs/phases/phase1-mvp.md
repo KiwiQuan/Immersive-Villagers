@@ -109,6 +109,27 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
   - Track vector count for performance monitoring
   - Handle errors gracefully (fallback to neutral vector)
 
+- [ ] **7. Implement MICROSERVICES mode vectorization (Script API side)**
+  - Create buildEventDescription(eventContext) function to generate text description
+  - Send HTTP POST to /api/vector/embed with event description
+  - Receive 384D embedding from backend
+  - Create SemanticVector packet with embedding + description fields
+  - Add AI_MODE check to route to correct vectorization method
+
+- [ ] **8. Implement MiniLM vector endpoint (Backend side)**
+  - Create POST /api/vector/embed endpoint in nodeDB/routes/vector.js
+  - Call vectorEngine.generateEmbedding(text) function
+  - Check concepts table before running MiniLM inference (deduplication)
+  - Return 384D embedding array in response
+  - Add error handling for model failures (fallback to MONOLITHIC mode)
+
+- [ ] **9. Test dual mode vectorization**
+  - Test in MONOLITHIC mode: Verify 5D vectors generated
+  - Switch to MICROSERVICES: `/scriptevent ai:toggle_mode microservices`
+  - Test same event: Verify 384D embedding generated
+  - Check concepts/episodes tables for cached embeddings (deduplication)
+  - Verify performance: MONOLITHIC <1ms, MICROSERVICES <20ms
+
 ---
 
 ## Feature 3: Layer 3 (Episode Sequencer - Basic)
@@ -147,6 +168,28 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
   - Clear episode buffer for this villager
   - Add debugLog() with episode details
   - Start new episode buffer immediately
+
+- [ ] **6. Implement Fast Intent Routing (MICROSERVICES mode only)**
+  - After episode seal, send event description to /api/brain/classify_intent
+  - Backend calls intentRouter.classifyIntent() using DistilBERT
+  - If confidence >0.8 and intent is 'aggression' or 'trading': Create fast IntentPacket
+  - Bypass LLM queue and send intent directly to Layer 7
+  - Log fast route decision if DEBUG_MODE enabled
+
+- [ ] **7. Implement episode summarization (MICROSERVICES mode only)**
+  - When episode seals, collect all raw event strings
+  - Send to /api/brain/summarize endpoint
+  - Backend calls episodeSummarizer.summarizeEpisode() using T5-small
+  - Store summary_text in episodes table (used for LLM context)
+  - Verify summary is 1 sentence, <30 tokens
+
+- [ ] **8. Test Fast Intent Routing**
+  - Enable MICROSERVICES mode and DEBUG_MODE
+  - Trigger aggressive event (player attacks villager)
+  - Verify DistilBERT classifies as "aggression" with >80% confidence
+  - Verify LLM is bypassed (check Brain Scheduler queue remains empty)
+  - Verify villager responds immediately (<100ms instead of 2-4s)
+  - Check ActionBar shows: "L3: [DistilBERT] → Intent: aggression (92%)"
 
 ---
 
@@ -260,7 +303,9 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 - [ ] **3. Create prompt builder (`nodeDB/brain/prompt_builder.js`)**
   - Fetch last 3 episodes for villagerID from PostgreSQL
   - Fetch relationship score with actorID
-  - Build simple prompt: "You are Villager X. Player Y just [action]. Respond."
+  - **MONOLITHIC mode:** Build prompt with raw [C, V, I, S, X] vectors (500 tokens)
+  - **MICROSERVICES mode:** Build prompt with summary_text from episodes (250 tokens)
+  - Check AI_MODE to determine which vector/summary column to use
   - Keep prompt under 512 tokens for fast inference
 
 - [ ] **4. Integrate LLM inference in Brain Scheduler**
@@ -274,6 +319,12 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
   - If intent is ready, return { status: "ready", intentPacket }
   - If not ready, return { status: "waiting" }
   - Remove intent from Map after it's consumed (single use)
+
+- [ ] **6. Test LLM with both AI modes**
+  - **MONOLITHIC mode:** Send prompt with raw vectors, verify response includes action selection
+  - **MICROSERVICES mode:** Send prompt with summaries, verify faster inference (1-2s vs 2-4s)
+  - Compare context sizes (MICROSERVICES should be ~50% shorter)
+  - Verify both modes produce valid IntentPackets
 
 ---
 
@@ -315,9 +366,89 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ---
 
-## Feature 8: End-to-End Integration Test
+## Feature 8: Structure Learning (Basic Pattern Detection)
 
-**Deliverable:** Complete loop from player action to villager response works seamlessly.
+**Deliverable:** Villagers detect and save repeating building patterns as templates.
+
+### Steps
+
+- [ ] **1. Create pattern detection buffer (`scripts/layers/layer3_structure_detector.js`)**
+  - Maintain Map of villagerID → observed blocks (last 60 seconds)
+  - Track block placement sequences with timestamps
+  - Cluster blocks into 3x3x3 spatial groups
+  - Generate spatial hash or semantic description per cluster
+
+- [ ] **2. Implement repeating pattern detection**
+  - Scan buffer for identical hashes appearing 3+ times
+  - When threshold met, mark as "Learned Recipe"
+  - Send HTTP POST to /api/structures/template/create
+  - Clear pattern from buffer after saving
+
+- [ ] **3. Create template storage endpoint (`nodeDB/routes/structures.js`)**
+  - POST /api/structures/template/create accepts pattern data
+  - Generate both spatial hash (MONOLITHIC) and MiniLM embedding (MICROSERVICES)
+  - Check for duplicates (if exists, increment observation_count)
+  - INSERT into structure_templates table
+  - Return templateID and confirmation
+
+- [ ] **4. Implement structure recognition query**
+  - GET /api/structures/recognize accepts block cluster
+  - Query structure_templates using appropriate vector column (based on AI_MODE)
+  - Return matched template if similarity > 92%
+  - Return null if no match found
+
+- [ ] **5. Test pattern learning**
+  - Player builds 3 identical wall segments (3 blocks vertical)
+  - Villager within 16 blocks observes
+  - Verify pattern detected after 3rd repetition
+  - Check structure_templates table for new entry
+  - Verify template has both pattern_hash and embedding (dual mode support)
+
+---
+
+## Feature 9: Basic Building Execution (Single Template)
+
+**Deliverable:** Villagers can place blocks to reproduce a learned template.
+
+### Steps
+
+- [ ] **1. Create build task system (`nodeDB/queries/build_tasks.js`)**
+  - Create createBuildTask(villagerID, templateID, anchorPos) function
+  - INSERT into build_tasks table with status: 'pending'
+  - Calculate total_steps from template instructions
+  - Return taskID
+
+- [ ] **2. Implement build step executor (`scripts/layers/layer7_builder.js`)**
+  - Run system.runInterval every 40 ticks (2 seconds)
+  - For each villager, check for pending build tasks via GET /api/build/next_task
+  - If task exists, execute one block placement
+  - Update current_step after successful placement
+
+- [ ] **3. Add pathfinding to build position**
+  - Calculate world position: anchor + instruction offset
+  - Check distance from villager
+  - If >4 blocks: Use entity.pathfind() to move closer
+  - If ≤4 blocks: Place block using dimension.setBlockType()
+
+- [ ] **4. Add inventory checking**
+  - Before starting task, verify villager has required materials
+  - Query villager inventory via getComponent('inventory')
+  - If insufficient materials: Set task status to 'waiting_materials'
+  - Display message to nearby players: "Needs X cobblestone"
+
+- [ ] **5. Test building execution**
+  - Create simple template (3-block tower)
+  - Assign task to test villager: `/scriptevent ai:build_template <templateID> <x> <y> <z>`
+  - Give villager required blocks in inventory
+  - Verify villager pathfinds to position
+  - Verify villager places blocks one by one
+  - Check build_tasks table shows status: 'completed'
+
+---
+
+## Feature 10: End-to-End Integration Test
+
+**Deliverable:** Complete loop from player action to villager response works seamlessly, including structure learning.
 
 ### Steps
 
@@ -355,10 +486,11 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 
 ## Testing Checklist
 
+**Core Perception & Memory:**
 - [ ] Villagers register in database on first initialization (villagers table)
 - [ ] Layer 1 filters events by proximity (ignores events >32 blocks)
 - [ ] Layer 1 filters events by Line of Sight (ignores occluded events)
-- [ ] Layer 2 calculates accurate [C, V, I, S, X] vectors for common blocks
+- [ ] Layer 2 calculates vectors correctly (both MONOLITHIC and MICROSERVICES modes)
 - [ ] Layer 3 seals episodes after 30s inactivity or context shift
 - [ ] Layer 3 matches episodes to known concepts in database
 - [ ] Layer 4 updates Working Memory in DynamicProperties
@@ -371,21 +503,65 @@ Build the **core perception-to-action loop** that allows villagers to observe pl
 - [ ] Multiple villagers can operate simultaneously without conflicts
 - [ ] Foreign key constraints prevent orphaned episodes
 - [ ] System handles network errors gracefully (no crashes)
-- [ ] DEBUG_MODE shows full data flow in console logs
+
+**AI_MODE Configuration:**
+- [ ] AI_MODE toggle works via `/scriptevent ai:toggle_mode`
+- [ ] MONOLITHIC mode uses semantic_vector_manual columns
+- [ ] MICROSERVICES mode uses semantic_vector_minilm columns
+- [ ] Fast Intent Routing bypasses LLM for high-confidence intents (MICROSERVICES)
+- [ ] T5-small generates episode summaries (MICROSERVICES)
+- [ ] MiniLM embeddings cache properly (MICROSERVICES)
+
+**DEBUG_MODE Features:**
+- [ ] DEBUG_MODE toggle works via `/scriptevent ai:toggle_debug`
+- [ ] Inference traces display in ActionBar
+- [ ] Performance metrics logged to console
+- [ ] GET /api/debug/status returns health and metrics
+- [ ] GET /api/debug/villager/:id returns detailed state
+- [ ] Performance warnings broadcast when thresholds exceeded
+- [ ] Debug buffers clear when DEBUG_MODE disabled
+
+**Structure Learning:**
+- [ ] Villagers detect repeating patterns (3+ identical clusters)
+- [ ] Templates save with both pattern_hash and embedding
+- [ ] Structure recognition works in both AI modes
+- [ ] Build tasks can be created and assigned
+- [ ] Villagers pathfind to build positions
+- [ ] Villagers place blocks within 4-block reach
+- [ ] Build progress updates in build_tasks table
+- [ ] Inventory checking prevents building without materials
 
 ---
 
 ## Known Limitations at End of Phase 1
 
+**Core AI:**
 - No relationship scoring (trust always defaults to 0.5)
 - No identity tags or personality traits
-- No advanced actions (pathfind, stare, flee) implemented
+- No advanced actions (stare, gesture) implemented
 - No macro-pattern detection (Spleef, etc.)
-- No player-facing UI (all interactions via ActionBar)
 - LLM context is minimal (last 3 episodes only, no personality)
 - No gossip system (villagers don't share knowledge)
-- No concept teaching (LLM can't label unknown patterns yet)
-- Villager_discoveries table exists but unused (concept learning in Phase 2)
+
+**Structure System:**
+- Only single-template building (no blueprints)
+- No blueprint composition (can't combine multiple templates)
+- No autonomous building triggers (player commands only)
+- No collaborative building (multi-villager coordination)
+- No functional zone detection (just pattern matching)
+- No structure repair or modification
+- Pattern detection limited to exact repetitions (3+ times)
+- No rotation/mirror variant detection in MONOLITHIC mode
+
+**UI:**
+- No player-facing structure browser UI
+- All interactions via ActionBar and chat commands
+- No visual build progress indicators (beyond ActionBar text)
+
+**Debug:**
+- Inference traces stored in memory only (not persisted)
+- No time-travel debugging (can't replay past decisions)
+- Vector visualization only via particle effects (no 3D overlay)
 
 ---
 
@@ -396,43 +572,58 @@ Immersive_Villagers BP/
 ├── scripts/
 │   ├── layers/
 │   │   ├── layer1_sensory.js
-│   │   ├── layer2_vectorizer.js
-│   │   ├── layer3_sequencer.js
+│   │   ├── layer2_vectorizer.js             # Enhanced with dual mode support
+│   │   ├── layer3_sequencer.js              # Enhanced with Fast Intent Routing
+│   │   ├── layer3_structure_detector.js     # NEW: Pattern detection
 │   │   ├── layer4_working_memory.js
-│   │   └── layer7_action_layer.js
+│   │   ├── layer7_action_layer.js
+│   │   └── layer7_builder.js                # NEW: Building execution
 │   ├── events/
 │   │   ├── player_events.js
 │   │   ├── entity_events.js
 │   │   └── chat_events.js
+│   ├── commands/
+│   │   ├── config_commands.js               # AI_MODE & DEBUG_MODE toggles
+│   │   └── build_commands.js                # NEW: Building commands
 │   ├── config/
 │   │   ├── constants.js
-│   │   ├── vector_rules.js
+│   │   ├── vector_rules.js                  # MONOLITHIC mode rules
 │   │   └── dynamic_properties_schema.js
 │   ├── utils/
 │   │   ├── vector_math.js
 │   │   ├── entity_helpers.js
 │   │   ├── time_helpers.js
-│   │   ├── debug_logger.js
+│   │   ├── debug_logger.js                  # Enhanced with inference tracing
 │   │   ├── network_helpers.js
-│   │   └── dynamic_properties_helpers.js
+│   │   ├── dynamic_properties_helpers.js
+│   │   └── structure_helpers.js             # NEW: Spatial hashing, clustering
 │   └── main.js
 │
 ├── nodeDB/
 │   ├── db/
 │   │   ├── pool.js
-│   │   └── schema.sql
+│   │   └── schema.sql                       # Updated with structure tables
 │   ├── queries/
 │   │   ├── episodes.js
 │   │   ├── working_memory.js
-│   │   └── concepts.js
+│   │   ├── concepts.js
+│   │   ├── structures.js                    # NEW: Template & blueprint queries
+│   │   └── build_tasks.js                   # NEW: Build task management
 │   ├── routes/
 │   │   ├── memory.js
 │   │   ├── brain.js
-│   │   └── debug.js
+│   │   ├── debug.js                         # Enhanced debug endpoints
+│   │   ├── config_router.js                 # NEW: AI_MODE & DEBUG_MODE toggles
+│   │   └── structures.js                    # NEW: Structure endpoints
 │   ├── brain/
 │   │   ├── scheduler.js
 │   │   ├── llm_client.js
-│   │   └── prompt_builder.js
+│   │   ├── prompt_builder.js
+│   │   ├── model_loader.js                  # NEW: Transformers.js loader
+│   │   ├── vector_engine.js                 # NEW: MiniLM wrapper
+│   │   ├── intent_router.js                 # NEW: DistilBERT classifier
+│   │   ├── episode_summarizer.js            # NEW: T5-small summarizer
+│   │   └── ner_extractor.js                 # NEW: BERT NER
 │   ├── middleware/
 │   │   ├── validate.js
 │   │   ├── logger.js
@@ -441,12 +632,21 @@ Immersive_Villagers BP/
 │   │   └── logger.js
 │   ├── app.js
 │   ├── server.js
-│   ├── package.json
-│   └── .env
+│   ├── package.json                         # Updated with @xenova/transformers
+│   └── .env                                 # Added AI_MODE config
 │
 └── _docs/
+    ├── Database_Schema.md                   # NEW: Complete schema
+    ├── AI_Modes.md                          # NEW: Architecture comparison
+    ├── Structure_System.md                  # NEW: Learning & building
+    ├── Debug_System.md                      # NEW: Debug features
+    ├── Brain Layers/
+    │   ├── Layer 2 - Perception Layer.md    # Updated with dual mode support
+    │   ├── Layer 3 - Brain Sequencer.md     # Updated with Fast Intent Routing
+    │   └── Layer 6 - Reasoning and Language.md  # Updated with reduced responsibilities
+    ├── tech-stack.md                        # Updated with new dependencies
     └── phases/
-        ├── phase0-setup.md
+        ├── phase0-setup.md                  # Updated with config toggles
         └── phase1-mvp.md                    # THIS FILE
 ```
 
@@ -485,16 +685,40 @@ Immersive_Villagers BP/
 
 ## Performance Targets
 
+### MONOLITHIC Mode
+
 | Layer | Operation | Target Latency | Notes |
 |-------|-----------|---------------|-------|
 | Layer 1 | Event filtering | <2ms | Proximity + LOS check |
-| Layer 2 | Vectorization | <1ms | Lookup + math operations |
+| Layer 2 | Manual vectorization | <1ms | Lookup + math operations |
 | Layer 3 | Vector append | <0.5ms | Array push + averaging |
 | Layer 4 | DynamicProperties update | <1ms | Single entity write |
 | Layer 5 | Episode write (HTTP + DB) | 50-150ms | Non-blocking |
 | Layer 6 | LLM inference | 2-4s | Async queue processing |
 | Layer 7 | Polling + execution | 5-20ms | GET + ActionBar display |
 | **Total (Fast Gear)** | **<5ms/event** | **Target met** ✅ |
+
+---
+
+### MICROSERVICES Mode
+
+| Layer | Operation | Target Latency | Notes |
+|-------|-----------|---------------|-------|
+| Layer 1 | Event filtering | <2ms | Proximity + LOS check |
+| Layer 2 | MiniLM vectorization | <20ms | Text description + embedding |
+| Layer 3 | Intent routing (DistilBERT) | <50ms | Classification (bypasses LLM if high confidence) |
+| Layer 3 | Vector append | <0.5ms | Array push + averaging |
+| Layer 4 | DynamicProperties update | <1ms | Single entity write |
+| Layer 5 | Episode write + T5 summary | 100-250ms | Non-blocking (includes summarization) |
+| Layer 6 | LLM inference (reduced) | 1-2s | Shorter context, dialogue only |
+| Layer 7 | Polling + execution | 5-20ms | GET + ActionBar display |
+| **Total (Fast Gear)** | **<20ms/event** | **Acceptable** ✅ |
+| **Fast-Routed Intents** | **50ms total** | **Bypasses LLM entirely** ⚡ |
+
+**Structure System:**
+- Pattern detection (MONOLITHIC): <1ms per block
+- Pattern detection (MICROSERVICES): ~20ms per block (MiniLM embedding)
+- Build execution: 1 block per 2 seconds (pathfinding + placement)
 
 ---
 
