@@ -152,19 +152,7 @@ This is the most powerful part. Because you are storing a **384-dimensional vect
 
 ---
 
-### 4. Implementing "Functional Zones"
-
-To make the villager understand _why_ a structure exists, you add a `zones` column to your `structure_blueprints` table.
-
-| **Zone Type** | **Detection Logic (No LLM needed)**               | **Villager Reaction**     |
-| ------------- | ------------------------------------------------- | ------------------------- |
-| **Resting**   | Contains a `bed` block.                           | "I can sleep here."       |
-| **Utility**   | Contains `furnace`, `crafting_table`, or `chest`. | "This is a workshop."     |
-| **Social**    | An open area with `bell` or `campfire` nearby.    | "This is a meeting spot." |
-
----
-
-### 5. Why this is "Scalable"
+### 4. Why this is "Scalable"
 
 - **Small DB Size:** You aren't storing millions of blocks. You are only storing **unique recipes**. A house might have 200 blocks, but it only has 3 unique "recipes" (Wall, Floor, Roof).
 - **Fast Building:** When you tell a villager "Build a House," they don't look at 200 coordinates. They look at the **Assembly Guide**: _"Place 4 wall segments, then 1 roof segment."_
