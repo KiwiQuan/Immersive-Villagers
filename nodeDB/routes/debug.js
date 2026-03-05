@@ -5,11 +5,12 @@ import axios from "axios";
 const router = express.Router();
 
 /**
- * GET /api/debug/health
+ * GET/POST /api/debug/health
  * Comprehensive health check endpoint that tests all system components.
+ * Accepts both GET and POST for testing Script API communication.
  * @returns {Object} Health status with database and LLM connectivity
  */
-router.get("/health", async (req, res) => {
+async function handleHealthCheck(req, res) {
   const healthStatus = {
     status: "online",
     timestamp: Date.now(),
@@ -23,7 +24,9 @@ router.get("/health", async (req, res) => {
   try {
     const client = await pool.connect();
     try {
-      const result = await client.query("SELECT NOW() as current_time, version()");
+      const result = await client.query(
+        "SELECT NOW() as current_time, version()",
+      );
       const poolStats = {
         totalCount: pool.totalCount,
         idleCount: pool.idleCount,
@@ -88,10 +91,19 @@ router.get("/health", async (req, res) => {
     };
   }
 
+  // Include request body data if POST was used (for testing)
+  if (req.method === "POST" && req.body) {
+    healthStatus.receivedData = req.body;
+  }
+
   // Determine overall status
   const httpStatus = healthStatus.status === "online" ? 200 : 503;
 
   res.status(httpStatus).json(healthStatus);
-});
+}
+
+// Support both GET and POST for testing Script API communication
+router.get("/health", handleHealthCheck);
+router.post("/health", handleHealthCheck);
 
 export default router;

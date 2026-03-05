@@ -240,7 +240,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-- [ ] **1. Create test script (`scripts/test_http.js`)**
+- [x] **1. Create test script (`scripts/test_http.js`)**
   - Import @minecraft/server-net http module
   - Create function to POST test data to /api/health
   - Parse response body and log result
