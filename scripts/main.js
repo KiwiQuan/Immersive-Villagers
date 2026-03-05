@@ -1,11 +1,13 @@
 import { world, system } from "@minecraft/server";
 import { runAllTests, initializeDebugCommands } from "./test_http.js";
+import { initializeLLMCommands } from "./test_llamacpp.js";
 
 console.warn("§e[AI Brain] Script is initializing...");
 
 system.runTimeout(() => {
   console.warn("§b[AI Brain] Initializing debug commands...");
   initializeDebugCommands();
+  initializeLLMCommands();
   
   console.warn("§b[AI Brain] Running initial HTTP communication tests...");
   runAllTests().catch((error) => {

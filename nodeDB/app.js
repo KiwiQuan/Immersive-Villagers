@@ -1,5 +1,6 @@
 import express from "express";
 import debugRoutes from "./routes/debug.js";
+import llmRoutes from "./routes/llm.js";
 import logger from "./utils/logger.js";
 
 /**
@@ -47,6 +48,9 @@ function createApp() {
   // Route structure
   // Debug routes (Health check, diagnostics)
   app.use("/api/debug", debugRoutes);
+
+  // LLM routes (Chat endpoint for testing)
+  app.use("/api/llm", llmRoutes);
 
   // Layer 5: Memory routes (Episode writes, Working Memory sync) - Phase 0 Feature 4+
   // app.use("/api/memory", memoryRoutes);
