@@ -45,14 +45,26 @@ bedrock-server-1.26.1.1/
 scripts/
 ├── layers/
 │   ├── layer1_sensory.js           # Sensory Filter (event filtering, proximity checks)
-│   ├── layer2_vectorizer.js        # Perception (converts events to [C,V,I,S,X] vectors)
-│   ├── layer3_sequencer.js         # Sequencer (groups vectors into episodes)
+│   ├── layer2_vectorizer.js        # Perception (dual-mode: manual or MiniLM vectorization)
+│   ├── layer3_sequencer.js         # Sequencer (groups vectors, intent routing)
 │   └── layer4_working_memory.js    # Working Memory (DynamicProperties management)
+│
+├── structures/
+│   ├── detector.js                 # Real-time structure pattern detection
+│   ├── builder.js                  # Building execution (ghost blocks, pathfinding)
+│   ├── spatial_hash.js             # MONOLITHIC mode: spatial hashing for patterns
+│   └── inventory_check.js          # Verify villager has required blocks
+│
+├── commands/
+│   ├── ai_mode_toggle.js           # Toggle AI_MODE (monolithic/microservices)
+│   ├── debug_toggle.js             # Toggle DEBUG_MODE on/off
+│   └── teach_structure.js          # Manual structure teaching commands
 │
 ├── ui/
 │   ├── hub.js                      # Main Menu (Interaction Hub)
 │   ├── gossip.js                   # Gossip & Whisper Menu
 │   ├── debug.js                    # Debug Modal (DEBUG_MODE only)
+│   ├── teacher_ui.js               # Manual concept correction interface
 │   ├── helpers.js                  # Shared UI formatting functions
 │   ├── state.js                    # Breadcrumb & menu state management
 │   ├── feedback.js                 # Async feedback (polling, loading states)
@@ -182,21 +194,24 @@ function getVillager(villagerID) {
 nodeDB/
 ├── db/
 │   ├── pool.js                     # PostgreSQL connection pool configuration
-│   ├── schema.sql                  # Database schema (episodes, relationships, working_memory)
+│   ├── schema.sql                  # Database schema (dual vectors, structure tables)
 │   └── migrations/                 # Schema version migrations
 │       ├── 001_initial_schema.sql
-│       └── 002_add_identity_tags.sql
+│       └── 002_add_dual_vectors.sql
 │
 ├── queries/
 │   ├── episodes.js                 # Episode-related queries (write, fetch by villager)
 │   ├── relationships.js            # Relationship queries (trust scores, interaction counts)
 │   ├── working_memory.js           # Working Memory sync queries (upsert, fetch)
-│   └── identity.js                 # Identity tag queries (update personality tags)
+│   ├── identity.js                 # Identity tag queries (update personality tags)
+│   └── structures.js               # Structure template queries (learn, search, fetch)
 │
 ├── routes/
 │   ├── memory.js                   # Layer 5 routes (/api/memory/episode, /api/memory/sync)
 │   ├── brain.js                    # Layer 6 routes (/api/brain/request, /api/brain/poll)
-│   └── debug.js                    # DEBUG_MODE utilities (/api/debug/clear, /api/debug/reset)
+│   ├── config_router.js            # AI_MODE & DEBUG_MODE toggle (/api/config/mode)
+│   ├── structures.js               # Structure learning routes (/api/structures/learn)
+│   └── debug.js                    # DEBUG_MODE utilities (/api/debug/performance)
 │
 ├── middleware/
 │   ├── validate.js                 # Request validation (check villagerID, sanitize input)
@@ -206,8 +221,13 @@ nodeDB/
 ├── brain/
 │   ├── scheduler.js                # Brain Scheduler (priority queue for LLM requests)
 │   ├── llm_client.js               # llama.cpp HTTP client wrapper
-│   ├── prompt_builder.js           # Constructs LLM prompts from context
-│   └── response_parser.js          # Parses LLM output into IntentPackets
+│   ├── prompt_builder.js           # Constructs LLM prompts (mode-aware)
+│   ├── response_parser.js          # Parses LLM output into IntentPackets
+│   ├── model_loader.js             # Transformers.js model loader (MICROSERVICES)
+│   ├── vector_engine.js            # MiniLM embedding generation wrapper
+│   ├── intent_router.js            # DistilBERT intent classification wrapper
+│   ├── episode_summarizer.js       # T5-small summarization wrapper
+│   └── ner_extractor.js            # BERT NER entity extraction wrapper
 │
 ├── utils/
 │   ├── logger.js                   # Pino logger configuration
@@ -215,8 +235,8 @@ nodeDB/
 │
 ├── app.js                          # Express initialization and middleware setup
 ├── server.js                       # Server entry point (starts HTTP listener)
-├── package.json                    # Node.js dependencies
-└── .env                            # Environment variables (DB credentials, DEBUG_MODE)
+├── package.json                    # Node.js dependencies (@xenova/transformers, etc.)
+└── .env                            # Environment variables (DB, DEBUG_MODE, AI_MODE)
 ```
 
 ### File Naming Conventions (Slow Gear)
@@ -335,10 +355,26 @@ _docs/
 ├── ui-rules.md                     # UI features, layout, and visual standards
 ├── ux-rules.md                     # UX flow, state management, async feedback
 ├── project-rules.md                # THIS FILE: Directory structure and naming conventions
-├── phase-plans/
-│   ├── phase1_backend_setup.md     # PostgreSQL, Node.js, llama.cpp setup
-│   ├── phase2_layers_1-4.md        # Fast Gear implementation
-│   └── phase3_layers_5-7.md        # Slow Gear implementation
+├── Database_Schema.md              # PostgreSQL schema with dual vectors and structure tables
+├── AI_Modes.md                     # MONOLITHIC vs MICROSERVICES architecture comparison
+├── Structure_System.md             # Structure learning and building mechanics
+├── Debug_System.md                 # Enhanced DEBUG_MODE features
+│
+├── Brain Layers/
+│   ├── Brain Layers Summary.md     # Overview of all 7 layers
+│   ├── Layer 1 - Sensory Layer.md
+│   ├── Layer 2 - Perception Layer.md       # Dual-mode vectorization
+│   ├── Layer 3 - Brain Sequencer.md        # Episode grouping + intent routing
+│   ├── Layer 4 - Working Memory.md
+│   ├── Layer 5 - Long Term Memory.md
+│   ├── Layer 6 - Reasoning and Language.md # Mode-aware LLM prompting
+│   └── Layer 7 - Action Layer.md
+│
+├── phases/
+│   ├── phase0-setup.md             # PostgreSQL, Node.js, llama.cpp, Transformers.js setup
+│   ├── phase1-mvp.md               # Core layers + structure learning + AI modes
+│   └── phase2-advanced.md          # Gossip, teaching, advanced building
+│
 └── diagrams/
     ├── architecture_overview.png   # 7-layer brain diagram
     └── data_flow.png               # Packet flow between layers
@@ -358,7 +394,13 @@ _docs/
 
 ## Architecture Overview
 
-### The 7-Layer Brain System
+### The 7-Layer Brain System (Dual AI Architecture)
+
+**AI_MODE Toggle:** Switch between MONOLITHIC and MICROSERVICES at runtime
+
+---
+
+#### MONOLITHIC Mode (Manual Vectors, Full LLM)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -369,8 +411,8 @@ _docs/
 │   - Output: FilteredEventContext                             │
 ├──────────────────────────────────────────────────────────────┤
 │ Layer 2: Perception (Vectorizer)                             │
-│   - Converts events to [C, V, I, S, X] vectors              │
-│   - Output: SemanticVector                                   │
+│   - Converts events to [C, V, I, S, X] vectors (manual)     │
+│   - Output: SemanticVector (5D)                              │
 ├──────────────────────────────────────────────────────────────┤
 │ Layer 3: Sequencer (Temporal)                                │
 │   - Groups vectors into Episodes                             │
@@ -379,13 +421,14 @@ _docs/
 │ Layer 4: Working Memory                                      │
 │   - Stores active state in DynamicProperties                 │
 │   - Output: ActiveAttentionState                             │
+│   - Structure Detection: Spatial hashing                     │
 └──────────────────────────────────────────────────────────────┘
                               ↓ HTTP POST
 ┌──────────────────────────────────────────────────────────────┐
 │                    SLOW GEAR (Node.js Backend)                │
 ├──────────────────────────────────────────────────────────────┤
 │ Layer 5: Long-Term Memory (LTM)                              │
-│   - Writes episodes to PostgreSQL                            │
+│   - Writes episodes to PostgreSQL (dual vectors)             │
 │   - Updates relationships and identity tags                   │
 │   - Output: IdentityContext                                  │
 ├──────────────────────────────────────────────────────────────┤
@@ -394,7 +437,7 @@ _docs/
 │   - Batches multiple villagers when possible                 │
 ├──────────────────────────────────────────────────────────────┤
 │ Layer 6: Language Cortex (Executive)                         │
-│   - LLM inference via llama.cpp                              │
+│   - LLM inference via llama.cpp (full responsibilities)      │
 │   - Generates IntentPackets                                  │
 │   - Output: IntentPacket                                     │
 └──────────────────────────────────────────────────────────────┘
@@ -405,17 +448,89 @@ _docs/
 │ Layer 7: Action Layer (The Body)                             │
 │   - Polls for pending IntentPackets                          │
 │   - Executes physical actions (speak, pathfind, build)       │
+│   - Building System: Ghost blocks, pathfinding, placement    │
 │   - Output: Villager behavior in game world                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
+---
+
+#### MICROSERVICES Mode (Transformers.js Models, Reduced LLM)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    FAST GEAR (Scripts API)                    │
+├──────────────────────────────────────────────────────────────┤
+│ Layer 1: Sensory (Retina)                                    │
+│   - Filters game events (proximity, LOS)                     │
+│   - Output: FilteredEventContext                             │
+└──────────────────────────────────────────────────────────────┘
+                              ↓ HTTP POST
+┌──────────────────────────────────────────────────────────────┐
+│                    SLOW GEAR (Node.js Backend)                │
+├──────────────────────────────────────────────────────────────┤
+│ Layer 2: Perception (Vectorizer)                             │
+│   - MiniLM-L6-v2: Generates 384D embeddings                  │
+│   - Cache check: concepts.semantic_vector_minilm             │
+│   - Output: SemanticVector (384D)                            │
+└──────────────────────────────────────────────────────────────┘
+                              ↓ Return to Script API
+┌──────────────────────────────────────────────────────────────┐
+│                    FAST GEAR (Scripts API)                    │
+├──────────────────────────────────────────────────────────────┤
+│ Layer 3: Sequencer (Temporal)                                │
+│   - Groups embeddings into Episodes                          │
+│   - DistilBERT: Intent classification (>0.8 confidence)      │
+│   - Fast Route: Bypass LLM for aggression/trading            │
+│   - Output: EpisodeSummary + Intent (or bypass)              │
+├──────────────────────────────────────────────────────────────┤
+│ Layer 4: Working Memory                                      │
+│   - Stores active state in DynamicProperties                 │
+│   - Structure Detection: Semantic vectors                    │
+└──────────────────────────────────────────────────────────────┘
+                              ↓ HTTP POST
+┌──────────────────────────────────────────────────────────────┐
+│                    SLOW GEAR (Node.js Backend)                │
+├──────────────────────────────────────────────────────────────┤
+│ Layer 5: Long-Term Memory (LTM)                              │
+│   - T5-small: Episode summarization (1 sentence)             │
+│   - Writes to PostgreSQL (dual vectors + summary_text)       │
+│   - Output: IdentityContext                                  │
+├──────────────────────────────────────────────────────────────┤
+│ Brain Scheduler (Infrastructure)                             │
+│   - Queues LLM requests (dialogue only)                      │
+├──────────────────────────────────────────────────────────────┤
+│ Layer 6: Language Cortex (Executive)                         │
+│   - LLM via llama.cpp (dialogue only, reduced load)          │
+│   - Generates IntentPackets (if not fast-routed)             │
+│   - Output: IntentPacket                                     │
+└──────────────────────────────────────────────────────────────┘
+                              ↓ HTTP GET (polling)
+┌──────────────────────────────────────────────────────────────┐
+│                    FAST GEAR (Scripts API)                    │
+├──────────────────────────────────────────────────────────────┤
+│ Layer 7: Action Layer (The Body)                             │
+│   - Polls for pending IntentPackets                          │
+│   - Executes physical actions (speak, pathfind, build)       │
+│   - Building System: Ghost blocks, pathfinding, placement    │
+│   - Output: Villager behavior in game world                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Key Difference:** MICROSERVICES mode offloads vectorization, intent routing, and summarization to small models, reducing LLM calls by ~60%.
+
 ### Key Architectural Principles
 
 1. **Subjectivity First:** All database queries filtered by `villagerID`
-2. **Tick Efficiency:** Layers 1-4 run in <5ms per villager per event
+2. **Tick Efficiency:** 
+   - Fast Gear (Script API) runs in <1ms per event (MONOLITHIC) or <5ms (MICROSERVICES with HTTP calls)
+   - Slow Gear (Backend) is async and non-blocking
 3. **Memory Safety:** Never store entity references, always fetch via `world.getEntity(id)`
 4. **Invisible by Default:** All internal processing is silent unless `DEBUG_MODE = true`
 5. **Graceful Degradation:** Fallback to Instinct if Backend or LLM fails
+6. **Dual AI Architecture:** Both MONOLITHIC and MICROSERVICES modes coexist in codebase, runtime-switchable
+7. **Cache Before Compute:** Always check existing tables (`concepts`, `episodes`, `structure_templates`) before running model inference
+8. **Physical Building:** Villagers must pathfind and place blocks like players (4-block reach, inventory checks)
 
 ---
 
@@ -423,22 +538,37 @@ _docs/
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Game-Side** | Minecraft Script API (JavaScript) | Layers 1-4 (Fast Gear) |
-| **Backend** | Node.js with Express | Layers 5-7 (Slow Gear) |
-| **Database** | PostgreSQL with pg-pool | Long-term subjective memory |
+| **Game-Side** | Minecraft Script API (JavaScript) | Layers 1, 3, 4, 7 (Fast Gear) |
+| **Backend** | Node.js with Express | Layers 2, 5, 6 (Slow Gear) |
+| **Database** | PostgreSQL with pg-pool + pgvector | Long-term subjective memory (dual vectors) |
 | **State Management** | DynamicProperties (Write-Through Cache) | Working Memory (Layer 4) |
 | **LLM** | llama.cpp (Local Inference) | Language Cortex (Layer 6) |
+| **Small Models** | @xenova/transformers | MICROSERVICES mode (vectorization, intent, summarization, NER) |
 | **Logging** | Pino (High-Performance) | Structured logging (Backend) |
 | **Networking** | @minecraft/server-net | HTTP requests from Script API to Node.js |
 
 ### Performance Targets
 
+#### MONOLITHIC Mode
+
 | Layer | Target Latency | Notes |
 |-------|---------------|-------|
-| Layers 1-4 (Fast Gear) | <5ms per event | Must maintain 20 TPS |
+| Layers 1-4 (Fast Gear) | <1ms per event | Manual vectorization |
 | Layer 5 (Memory Write) | 50-150ms | HTTP POST + PostgreSQL write |
-| Layer 6 (LLM Inference) | 1-5 seconds | Async, non-blocking |
+| Layer 6 (LLM Inference) | 2-4 seconds | Full planning + dialogue |
 | Layer 7 (Polling) | 5-20ms | In-memory lookup |
+
+#### MICROSERVICES Mode
+
+| Layer | Target Latency | Notes |
+|-------|---------------|-------|
+| Layer 1 (Fast Gear) | <1ms per event | Event filtering only |
+| Layer 2 (MiniLM) | 15-20ms | 384D embedding generation (with cache) |
+| Layer 3 (DistilBERT) | 50-150ms | Intent classification |
+| Layer 5 (T5-small) | 200-500ms | Episode summarization |
+| Layer 6 (LLM Inference) | 1-2 seconds | Dialogue only (reduced load) |
+| Layer 7 (Polling) | 5-20ms | In-memory lookup |
+| **Fast Route** | 50ms total | Bypasses LLM entirely for high-confidence intents |
 
 ---
 
@@ -538,12 +668,19 @@ DB_PASSWORD=secure_password
 PORT=3000
 NODE_ENV=production
 
+# AI Configuration
+AI_MODE=monolithic               # Options: monolithic, microservices
+DEBUG_MODE=false                  # Enable debug logging and UI
+
 # LLM
 LLAMA_URL=http://localhost:8080
 
+# Transformers.js Models (MICROSERVICES mode only)
+TRANSFORMERS_CACHE_DIR=./models_cache
+TRANSFORMERS_LOCAL_FILES_ONLY=false
+
 # Logging
 LOG_LEVEL=info
-DEBUG_MODE=false
 ```
 
 ### Constants (`scripts/config/constants.js`)
@@ -559,6 +696,7 @@ DEBUG_MODE=false
  * @version 1.0
  */
 
+// Core System
 export const AWARENESS_RADIUS = 32; // Blocks
 export const MAX_EPISODE_DURATION = 30000; // 30 seconds in ms
 export const EPISODE_VECTOR_THRESHOLD = 0.3; // Context shift threshold
@@ -566,6 +704,25 @@ export const WORKING_MEMORY_SYNC_INTERVAL = 100; // Ticks (5 seconds)
 export const POLLING_INTERVAL = 40; // Ticks (2 seconds)
 export const LLM_TIMEOUT = 10000; // 10 seconds in ms
 export const MAX_POLLING_ATTEMPTS = 10; // 20 seconds total
+
+// AI Mode
+export const AI_MODE = {
+  MONOLITHIC: 'monolithic',
+  MICROSERVICES: 'microservices'
+};
+
+// Structure System
+export const STRUCTURE_DETECTION_TIMEOUT = 5000; // 5 seconds of inactivity
+export const BUILD_REACH = 4; // Blocks (villager can place blocks 4 blocks away)
+export const BUILD_TICK_RATE = 40; // Ticks between block placements (2 seconds)
+export const PATTERN_SIMILARITY_THRESHOLD = 0.85; // Cosine similarity for structure matching
+
+// Debug System
+export const DEBUG_MODE_LATENCY_THRESHOLDS = {
+  FAST_GEAR: 10, // ms
+  SLOW_GEAR: 5000, // ms
+  STRUCTURE_DETECTION: 200 // ms
+};
 ```
 
 ---
@@ -574,28 +731,56 @@ export const MAX_POLLING_ATTEMPTS = 10; // 20 seconds total
 
 ### Enabling DEBUG_MODE
 
-**In-Game:**
+**In-Game Commands:**
 ```javascript
-// Enable DEBUG_MODE (operator only)
-world.setDynamicProperty('DEBUG_MODE', true);
+// Enable DEBUG_MODE
+/scriptevent ai:debug on
 
 // Disable DEBUG_MODE
-world.setDynamicProperty('DEBUG_MODE', false);
+/scriptevent ai:debug off
+
+// Toggle AI_MODE
+/scriptevent ai:mode monolithic
+/scriptevent ai:mode microservices
 ```
 
 **Backend (.env):**
 ```env
 DEBUG_MODE=true
+AI_MODE=microservices
 LOG_LEVEL=debug
 ```
 
 ### DEBUG_MODE Features
 
-1. **Console Logging:** All HTTP requests and responses logged
-2. **Debug Modal:** CRUD operations on villager data
-3. **Live Vector Stream:** Real-time vector monitoring
-4. **Force LLM Request:** Manual trigger for Layer 6 inference
-5. **Episode Sealing:** Manual seal current episode
+1. **Inference Tracing (The "Brain Path"):**
+   - Shows processing flow in player ActionBar
+   - Example: `[L1] → [L2: MiniLM 18ms] → [L3: Intent=Trade 0.92] → [L7: BYPASS]`
+
+2. **Vector Similarity Highlighting:**
+   - Green particle effects at recognized structures
+   - ActionBar log: `Structure Match: oak_wall_segment (similarity: 0.94)`
+   - Console log: Full cosine similarity scores
+
+3. **Manual Concept Correction (The "Teacher" UI):**
+   - Right-click villager → "Open Debug Menu" → "Structure Memory" tab
+   - Correct mislabeled structures
+   - Triggers re-vectorization and database update
+
+4. **Performance Benchmarking (Gear Latency Warnings):**
+   - Console logging with latency metrics
+   - Threshold warnings if Fast Gear >10ms or Slow Gear >5000ms
+   - Recommendation to switch AI_MODE if performance degrades
+
+5. **Debug Modal:** 
+   - Live State View (current vector, open episode)
+   - AI Mode toggle button
+   - Structure memory list with similarity scores
+   - CRUD operations on villager data
+   - Knowledge injection
+   - Force LLM request
+
+6. **Console Logging:** All HTTP requests and responses logged with timing
 
 ### DEBUG_MODE Usage Rules
 
@@ -604,6 +789,13 @@ LOG_LEVEL=debug
   const DEBUG_MODE = world.getDynamicProperty('DEBUG_MODE') || false;
   if (DEBUG_MODE) {
     console.warn('[Layer 2] Vector calculated:', vector);
+  }
+  ```
+
+- **Use inference tracer for brain path visualization:**
+  ```javascript
+  if (DEBUG_MODE) {
+    logInferenceTrace(villagerID, layerName, operation, latency);
   }
   ```
 
@@ -658,19 +850,240 @@ export function calculateValue(eventContext) { /* ... */ }
 
 ---
 
+## Structure System Standards
+
+### File Organization
+
+Structure-related code must be organized by responsibility:
+
+```
+scripts/structures/
+├── detector.js          # Real-time pattern observation
+├── builder.js           # Building execution (ghost blocks, placement)
+├── spatial_hash.js      # MONOLITHIC: Geometric pattern matching
+└── inventory_check.js   # Verify block availability
+
+nodeDB/queries/
+└── structures.js        # Database queries for structure templates and blueprints
+```
+
+### Structure Detection Rules
+
+1. **Observation Window:** Monitor for 5 seconds of inactivity after last block placement
+2. **Minimum Pattern Size:** At least 3 blocks to qualify as a structure
+3. **Deduplication:**
+   - **MONOLITHIC:** Check `structure_templates.pattern_hash` before storing
+   - **MICROSERVICES:** Check `structure_templates.embedding` with cosine similarity >0.85
+4. **Cache Strategy:** Always query existing templates before running MiniLM inference
+
+### Building System Rules
+
+1. **Pathfinding:** Villager must physically walk to each block position
+2. **Block Reach:** 4 blocks (same as player)
+3. **Placement Rate:** 1 block per 40 ticks (2 seconds) to maintain 20 TPS
+4. **Inventory Checks:** Verify villager has required blocks before starting build
+5. **Ghost Blocks:** Use particle effects to preview build location
+6. **Error Handling:** If block placement fails, retry once, then skip and continue
+
+### Database Interaction
+
+```javascript
+// Always check for existing patterns before vectorization
+async function learnStructure(blockList, description) {
+  // 1. Check cache
+  const existing = await db.query(
+    'SELECT id, embedding FROM structure_templates WHERE label = $1',
+    [description]
+  );
+  
+  if (existing.rows.length > 0) {
+    // Increment observation_count
+    await db.query(
+      'UPDATE structure_templates SET observation_count = observation_count + 1 WHERE id = $1',
+      [existing.rows[0].id]
+    );
+    return existing.rows[0].id;
+  }
+  
+  // 2. Generate embedding (only if not cached)
+  const embedding = await generateEmbedding(description);
+  
+  // 3. Store new template
+  const result = await db.query(
+    'INSERT INTO structure_templates (label, embedding, instructions) VALUES ($1, $2, $3) RETURNING id',
+    [description, embedding, JSON.stringify(blockList)]
+  );
+  
+  return result.rows[0].id;
+}
+```
+
+---
+
+## AI Mode Best Practices
+
+### Mode Selection Guidelines
+
+**Use MONOLITHIC Mode when:**
+- Predictable, low-latency responses needed
+- No external model dependencies desired
+- Debugging manual vectorization rules
+- Testing on low-resource servers
+
+**Use MICROSERVICES Mode when:**
+- Semantic understanding is critical (structure recognition)
+- Reducing LLM load is priority
+- Fast intent routing for simple interactions
+- Handling complex player chat (NER extraction)
+
+### Mode-Aware Code Patterns
+
+All vectorization code must check `AI_MODE` and branch accordingly:
+
+```javascript
+/**
+ * Generates semantic vector based on current AI_MODE
+ * @param {Object} eventContext - Filtered event from Layer 1
+ * @returns {Promise<Object>} SemanticVector (5D or 384D)
+ */
+async function vectorizeEvent(eventContext) {
+  const aiMode = world.getDynamicProperty('AI_MODE') || 'monolithic';
+  
+  if (aiMode === 'monolithic') {
+    // Manual vectorization (instant)
+    return calculateVectorManual(eventContext);
+  } else {
+    // MiniLM vectorization (async, 15-20ms)
+    const description = buildEventDescription(eventContext);
+    const response = await http.post('http://localhost:3000/api/vector/embed', {
+      body: JSON.stringify({ description, villagerID: eventContext.villagerID })
+    });
+    return JSON.parse(response.body);
+  }
+}
+```
+
+### Dual Vector Storage Pattern
+
+Always store both vector types in PostgreSQL to enable seamless mode switching:
+
+```javascript
+// Write episode with dual vectors
+await db.query(
+  `INSERT INTO episodes (villager_id, actor_id, semantic_vector_manual, semantic_vector_minilm, summary_text)
+   VALUES ($1, $2, $3, $4, $5)`,
+  [villagerID, actorID, manualVector, miniLMVector, summaryText]
+);
+```
+
+---
+
+## Transformers.js Model Standards (MICROSERVICES Mode)
+
+### Model Loading Pattern
+
+All models must be loaded once at server startup and reused:
+
+```javascript
+// nodeDB/brain/model_loader.js
+const { pipeline } = require('@xenova/transformers');
+
+let vectorizerModel = null;
+let intentClassifierModel = null;
+let summarizerModel = null;
+let nerModel = null;
+
+/**
+ * Loads all Transformers.js models for MICROSERVICES mode
+ * @returns {Promise<void>}
+ */
+async function loadModels() {
+  console.log('[Model Loader] Loading Transformers.js models...');
+  
+  vectorizerModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+  intentClassifierModel = await pipeline('zero-shot-classification', 'Xenova/distilbert-base-uncased-mnli');
+  summarizerModel = await pipeline('summarization', 'Xenova/t5-small');
+  nerModel = await pipeline('ner', 'Xenova/bert-base-multilingual-cased-ner-slavic');
+  
+  console.log('[Model Loader] All models loaded successfully');
+}
+
+module.exports = { loadModels, vectorizerModel, intentClassifierModel, summarizerModel, nerModel };
+```
+
+### Model-Specific Rules
+
+#### 1. MiniLM (Vectorization)
+- **Purpose:** Generate 384D embeddings from text descriptions
+- **Cache:** Always check `concepts.semantic_vector_minilm` before inference
+- **Input:** Natural language description (max 512 tokens)
+- **Output:** Float32Array(384)
+
+#### 2. DistilBERT (Intent Classification)
+- **Purpose:** Classify intent for fast routing
+- **Labels:** `['aggression', 'trading', 'building', 'asking_question', 'idling']`
+- **Threshold:** Only bypass LLM if confidence >0.8
+- **Fallback:** Route to LLM if confidence <0.8
+
+#### 3. T5-small (Summarization)
+- **Purpose:** Compress episode logs into 1-sentence summaries
+- **Input:** Concatenated event descriptions (max 512 tokens)
+- **Output:** Single sentence stored in `episodes.summary_text`
+- **Fallback:** If summarization fails, store first event description
+
+#### 4. BERT NER (Entity Extraction)
+- **Purpose:** Extract block types and item names from player chat
+- **Input:** Raw chat message
+- **Output:** Array of entities: `[{ text: "oak_planks", type: "BLOCK" }]`
+- **Use Case:** Structure building from chat commands
+
+### Error Handling for Models
+
+```javascript
+// Wrap all model calls in try/catch
+try {
+  const embedding = await vectorizerModel(description);
+  return embedding.data;
+} catch (err) {
+  logger.error({ error: err.message }, '[MiniLM] Vectorization failed');
+  // Fallback: Use manual vectorization or return cached result
+  return fallbackVector;
+}
+```
+
+---
+
 ## API Endpoint Standards
 
 ### Naming Conventions
 
-**Format:** `/api/{layer}/{resource}/{action}`
+**Format:** `/api/{layer}/{resource}/{action}` or `/api/{system}/{action}`
 
-**Examples:**
+**Core Endpoints:**
 - `POST /api/memory/episode` - Write episode to Layer 5
 - `POST /api/memory/sync` - Sync Working Memory to Layer 5
 - `GET /api/memory/gossip` - Fetch recent memories
 - `POST /api/brain/request` - Queue LLM inference (Layer 6)
 - `GET /api/brain/poll` - Poll for pending IntentPackets (Layer 7)
+- `POST /api/brain/classify_intent` - DistilBERT intent classification (MICROSERVICES)
+- `POST /api/brain/summarize` - T5-small episode summarization (MICROSERVICES)
 - `GET /api/health` - Backend health check
+
+**Structure System Endpoints:**
+- `POST /api/structures/learn` - Save structure template from observation
+- `GET /api/structures/search` - Find similar structures (cosine similarity)
+- `GET /api/structures/template/:id` - Fetch structure template by ID
+- `POST /api/structures/blueprint` - Save high-level blueprint
+
+**AI Mode & Config Endpoints:**
+- `POST /api/config/mode` - Toggle AI_MODE (monolithic/microservices)
+- `POST /api/config/debug` - Toggle DEBUG_MODE (on/off)
+- `GET /api/config/current` - Get current AI_MODE and DEBUG_MODE
+
+**Debug Endpoints:**
+- `GET /api/debug/performance` - Get latency metrics by layer
+- `POST /api/debug/correct_concept` - Manual concept correction (Teacher UI)
+- `GET /api/debug/inference_log` - Get recent inference traces
 
 ### Response Format (Standard)
 
@@ -784,15 +1197,24 @@ try {
 
 ## Glossary
 
-- **[C, V, I, S, X]:** The 5-axis semantic vector (Constructiveness, Value, Intensity, Sociality, Complexity)
+- **[C, V, I, S, X]:** The 5-axis semantic vector (Constructiveness, Value, Intensity, Sociality, Complexity) used in MONOLITHIC mode
+- **384D Embedding:** Semantic vector generated by MiniLM-L6-v2 used in MICROSERVICES mode
+- **AI_MODE:** Configuration toggle between MONOLITHIC (manual vectors) and MICROSERVICES (Transformers.js models)
 - **Episode:** A grouped sequence of vectors representing a coherent activity (e.g., "Building Session")
 - **IntentPacket:** The LLM's decision output, containing an action and parameters
 - **DynamicProperties:** Bedrock's persistent key-value storage for entities, survives server restarts
-- **Fast Gear:** Layers 1-4, optimized for high-frequency execution in Script API (<5ms per event)
-- **Slow Gear:** Layers 5-7, asynchronous processing in Node.js (1-5 seconds)
+- **Fast Gear:** Layers 1, 3, 4, 7 in Script API (<1ms per event in MONOLITHIC, <5ms in MICROSERVICES)
+- **Slow Gear:** Layers 2, 5, 6 in Node.js (asynchronous processing, 50ms-5s)
 - **Brain Scheduler:** Infrastructure middleware managing LLM request batching and prioritization
-- **Working Memory:** Layer 4 state stored in DynamicProperties (current mood, focus, shock state)
-- **Long-Term Memory:** Layer 5 state stored in PostgreSQL (episodes, relationships, identity)
+- **Working Memory:** Layer 4 state stored in DynamicProperties (current mood, focus, shock state, build tasks)
+- **Long-Term Memory:** Layer 5 state stored in PostgreSQL (episodes, relationships, identity, structures)
+- **Fast Intent Routing:** MICROSERVICES feature that bypasses LLM for high-confidence intents (>0.8 confidence)
+- **Structure Template:** A building "recipe" storing relative block positions (stored in `structure_templates` table)
+- **Structure Blueprint:** High-level assembly guide linking multiple templates into functional zones
+- **Ghost Blocks:** Visual placeholders (particles) showing where a villager will place blocks during construction
+- **Transformers.js:** Browser-compatible ML library providing MiniLM, DistilBERT, T5, and BERT models
+- **Spatial Hash:** MONOLITHIC mode's method for recognizing structure patterns using geometric hash functions
+- **Semantic Vector:** MICROSERVICES mode's method for recognizing structure patterns using MiniLM embeddings
 
 ---
 
@@ -806,10 +1228,22 @@ try {
 - Defined architectural overview and performance targets
 - Added common patterns, anti-patterns, and best practices
 
+**Version 1.1 (Mar 3, 2026):**
+- Added dual AI architecture (MONOLITHIC vs MICROSERVICES modes)
+- Added structure system directories (`scripts/structures/`, `scripts/commands/`)
+- Added Transformers.js model standards and best practices
+- Updated directory structure with new brain modules (vector_engine, intent_router, etc.)
+- Added AI_MODE and DEBUG_MODE configuration standards
+- Added structure detection and building system rules
+- Updated API endpoint standards with structure and config routes
+- Added Transformers.js model loading patterns and error handling
+- Updated glossary with new terms (AI_MODE, Ghost Blocks, Spatial Hash, etc.)
+- Updated performance targets for both AI modes
+
 ---
 
 **Document Type:** Project Rules & Standards  
 **Author:** Senior Minecraft Scripting Engineer  
 **Status:** Approved (Ready for Implementation)  
-**Version:** 1.0  
-**Last Updated:** Feb 23, 2026
+**Version:** 1.1  
+**Last Updated:** Mar 3, 2026

@@ -13,12 +13,16 @@ The loop is a continuous cycle where game events flow from the Minecraft world t
 
 ## The Complete Loop (High-Level)
 
+**Flow varies by AI_MODE (MONOLITHIC vs MICROSERVICES):**
+
+### MONOLITHIC Mode (Manual 5D Vectors)
+
 ```
 Player Action
     ↓
 [Layer 1: Sensory] ← Game Event Detected
     ↓
-[Layer 2: Vectorizer] ← Convert to [C, V, I, S, X]
+[Layer 2: Vectorizer] ← Convert to [C, V, I, S, X] (manual lookup)
     ↓
 [Layer 3: Sequencer] ← Group into Episodes
     ↓
@@ -38,6 +42,38 @@ Player Observes Result
     ↓
 (Loop Repeats)
 ```
+
+### MICROSERVICES Mode (Semantic 384D Embeddings)
+
+```
+Player Action
+    ↓
+[Layer 1: Sensory] ← Game Event Detected
+    ↓
+[Layer 2: Vectorizer] ← Convert to 384D embedding (MiniLM)
+    ↓
+[Layer 3: Sequencer] ← Group + Classify Intent (DistilBERT)
+    ├─ High Confidence Intent → [FAST ROUTE: Bypass LLM]
+    └─ Low Confidence Intent → [Continue to LLM]
+    ↓
+[Layer 4: Working Memory] ← Update Active State
+    ↓
+[Layer 5: Long-Term Memory] ← Write + Summarize (T5-small)
+    ↓
+[Brain Scheduler] ← Queue LLM Request (if needed)
+    ↓
+[Layer 6: Language Cortex] ← LLM Dialogue Only (reduced responsibilities)
+    ↓
+[Layer 7: Action Layer] ← Poll for IntentPacket & Execute
+    ↓
+Villager Executes Action (Pathfind, Speak, Build)
+    ↓
+Player Observes Result
+    ↓
+(Loop Repeats)
+```
+
+**Key Difference:** MICROSERVICES mode can bypass LLM entirely for simple intents (50ms vs 2-4s).
 
 ---
 
@@ -87,7 +123,12 @@ A player performs an action in the game world:
 ### Layer 2: Perception (Vectorizer) — Semantic Encoding
 
 **Location:** Script API (Fast Gear)  
-**Frequency:** Triggered by Layer 1 output
+**Frequency:** Triggered by Layer 1 output  
+**Behavior:** Depends on AI_MODE configuration
+
+---
+
+### MONOLITHIC Mode: Manual 5D Vectorization
 
 **Process:**
 1. Receive `FilteredEventContext` from Layer 1.
@@ -117,7 +158,38 @@ A player performs an action in the game world:
 }
 ```
 
-**Telemetry:** Silent. No player-facing output.
+**Performance:** <1ms per event
+
+---
+
+### MICROSERVICES Mode: Semantic 384D Vectorization
+
+**Process:**
+1. Receive `FilteredEventContext` from Layer 1.
+2. Generate natural language description:
+   - Example: "Steve placed a high-value decorative block near the villager home"
+3. Send HTTP POST to `/api/vector/embed` with description
+4. Backend checks `concepts` table for cached embedding (deduplication)
+5. If not cached: Generate 384D embedding using **Xenova/all-MiniLM-L6-v2**
+6. Return embedding to Script API
+
+**Output Packet:**
+```json
+{
+  "type": "SemanticVector",
+  "villagerID": "villager-entity-456",
+  "actorID": "player-uuid-123",
+  "embedding": [0.12, 0.45, -0.32, ...],
+  "description": "Steve placed a high-value decorative block near the villager home",
+  "rawEvent": "playerPlaceBlock",
+  "blockType": "minecraft:diamond_block",
+  "timestamp": 1645564800000
+}
+```
+
+**Performance:** <20ms per event (includes cache check)
+
+**Telemetry:** Silent. No player-facing output. (DEBUG_MODE shows inference trace in ActionBar)
 
 ---
 
@@ -125,10 +197,13 @@ A player performs an action in the game world:
 
 ### Layer 3: Sequencer (Temporal) — Pattern Grouping
 
-**Location:** Script API (Fast Gear)  
+**Location:** Script API (Fast Gear) + Backend (MICROSERVICES mode)  
 **Frequency:** Continuous accumulation, sealed by triggers
 
-**Process:**
+---
+
+### MONOLITHIC Mode Process:
+
 1. Receive `SemanticVector` stream from Layer 2.
 2. Append each vector to the current open `Episode` object stored in memory.
 3. Calculate running averages of `[C, V, I, S, X]` across all vectors in the episode.
@@ -136,8 +211,26 @@ A player performs an action in the game world:
    - **Context Shift:** New vector differs significantly from episode average (e.g., `C` shifts from +0.7 to -0.8).
    - **Inactivity Timer:** 30 seconds pass with no new vectors.
    - **Manual Seal:** High-intensity event (e.g., player hits villager) forces immediate seal.
-
 5. When sealed, generate an `EpisodeSummary`.
+
+---
+
+### MICROSERVICES Mode Process (Enhanced):
+
+1. Receive `SemanticVector` (384D embedding) stream from Layer 2.
+2. Append each embedding to the current open `Episode`.
+3. Calculate running average of embeddings.
+4. Monitor for sealing triggers (same as MONOLITHIC).
+5. **Before sealing:** 
+   - Send event description to `/api/brain/classify_intent`
+   - Backend runs **Xenova/distilbert-base-uncased-mnli** for intent classification
+   - Labels: `['aggression', 'trading', 'building', 'asking_question', 'idling']`
+6. **Fast Intent Routing:**
+   - If confidence >0.8 AND intent is 'aggression' or 'trading': Create IntentPacket immediately (bypass LLM)
+   - If confidence <0.8 OR intent requires dialogue: Continue to LLM
+7. When sealed, generate `EpisodeSummary` and send to `/api/brain/summarize`
+8. Backend runs **Xenova/t5-small** to generate 1-sentence summary
+9. Store summary in `episodes.summary_text` column
 
 **Output Packet (EpisodeSummary):**
 ```json
@@ -299,8 +392,9 @@ The **Brain Scheduler** processes the queue:
    - Relationship score with the player.
    - Personality tags (e.g., `is_brave`, `loves_diamonds`).
 
-2. Constructs an LLM prompt:
+2. Constructs an LLM prompt (format varies by AI_MODE):
 
+**MONOLITHIC Mode Prompt (Raw Vectors):**
 ```plaintext
 You are Villager #456. You have been observing Player #123.
 
@@ -320,6 +414,31 @@ Based on this context, generate a response:
 2. Action Intent: What will you do next? (Options: speak, pathfind, build, idle)
 3. Speech (if speaking): What will you say to the player?
 ```
+
+**MICROSERVICES Mode Prompt (Summarized Text):**
+```plaintext
+You are Villager #456. You have been observing Player #123.
+
+Recent Activity:
+- Episode Summary: "Steve placed decorative blocks near the villager home"
+- Duration: 5 seconds, 2 events
+
+Your Relationship with Player #123:
+- Trust Score: 0.78
+- Past Episodes:
+  • "Steve helped build a fence around the village"
+  • "Steve traded emeralds for tools"
+
+Your Identity:
+- Personality: loves_building, values_diamonds
+
+Based on this context, generate a response:
+1. Internal Monologue: What are you thinking?
+2. Action Intent: What will you do next? (Options: speak, pathfind, build, idle)
+3. Speech (if speaking): What will you say to the player?
+```
+
+**Key Difference:** MICROSERVICES mode provides human-readable summaries instead of raw vectors, reducing LLM complexity.
 
 3. Calls llama.cpp via subprocess or HTTP and receives the LLM's response:
 
@@ -470,6 +589,88 @@ The player may react by:
 
 ---
 
+## Stage 9: Structure Learning & Building (New Feature)
+
+### Structure Learning: Observation Flow
+
+**Trigger:** Player builds a structure near a villager OR uses `/scriptevent teach:structure <label>`
+
+**Location:** Script API + Backend  
+**AI_MODE Impact:** Pattern recognition method differs
+
+---
+
+#### MONOLITHIC Mode: Spatial Hashing
+
+**Process:**
+1. **Layer 1** detects consecutive `playerPlaceBlock` events
+2. **Structure Detector** (Script API) accumulates block positions and types
+3. When pattern stabilizes (5s no activity): Generate spatial hash
+   - Example hash: `oak_3x5x1_hash_abc123`
+4. HTTP POST to `/api/structures/learn`:
+   ```json
+   {
+     "villagerID": "villager-456",
+     "blockList": [
+       {"x": 0, "y": 1, "z": 0, "type": "oak_plank"},
+       {"x": 1, "y": 1, "z": 0, "type": "oak_plank"}
+     ],
+     "patternHash": "oak_3x5x1_hash_abc123",
+     "label": "oak_wall_segment"
+   }
+   ```
+5. Backend checks `structure_templates.pattern_hash` for deduplication
+6. If new: Store template with hash and instructions
+7. If exists: Increment `observation_count`
+
+---
+
+#### MICROSERVICES Mode: Semantic Vectors
+
+**Process:**
+1. **Layer 1** detects consecutive `playerPlaceBlock` events
+2. **Structure Detector** generates text description:
+   - "A 3-block-wide wall made of oak planks, 5 blocks tall"
+3. HTTP POST to `/api/structures/learn` with description
+4. Backend checks `structure_templates.embedding` for similar vectors (cosine similarity >0.85)
+5. If not cached: Generate 384D embedding using **Xenova/all-MiniLM-L6-v2**
+6. Store template with embedding and instructions
+7. If similar exists: Increment observation_count and update label
+
+---
+
+### Structure Building: Execution Flow
+
+**Trigger:** Player command OR Autonomous need (e.g., shelter needed)
+
+**Process:**
+1. **Layer 6** generates IntentPacket with `action: "build"`
+   ```json
+   {
+     "action": "build",
+     "structureID": 42,
+     "targetLocation": {"x": 100, "y": 64, "z": -50},
+     "priority": "high"
+   }
+   ```
+2. **Layer 7** receives intent and fetches structure template from PostgreSQL
+3. **Building System** (Script API):
+   - Loads blueprint instructions (relative block positions)
+   - Creates "Ghost Blocks" (placeholder particles) at target location
+   - Pathfinds to each block position (4-block reach from villager)
+   - Checks inventory for required blocks
+   - Places blocks using Script API `setBlockType()`
+   - Updates `build_tasks` table with progress
+4. **Player observes:** Villager walking to positions and placing blocks
+
+**Performance:** 1 block per 2-3 seconds (realistic human-like building)
+
+**Telemetry:** 
+- **DEBUG_MODE:** Shows ghost blocks and current build step in ActionBar
+- **Normal Mode:** Silent, player only sees physical building
+
+---
+
 ## Detailed Data Flow: A Complete Example
 
 ### Scenario: Player Places a Diamond Block Near a Villager
@@ -587,20 +788,62 @@ system.runInterval(() => {
 - **Performance:** All HTTP requests, vector calculations, and database writes are silent.
 
 ### Debug Mode (DEBUG_MODE = true)
-- **Console Logging:** Every HTTP request and response logged to Content Log:
+
+#### 1. Inference Tracing (The "Brain Path")
+Shows the processing flow for each event in the player's ActionBar:
+```
+[L1: Sensory] → [L2: MiniLM 15ms] → [L3: DistilBERT→FastRoute] → [L7: Execute]
+```
+
+**Example Flow:**
+- MONOLITHIC: `[L1] → [L2: 0.8ms] → [L3: Episode] → [L5: Write] → [L6: LLM]`
+- MICROSERVICES: `[L1] → [L2: MiniLM 18ms] → [L3: Intent=Trade 0.92] → [L7: BYPASS]`
+
+#### 2. Vector Similarity Highlighting
+- **Particle Effects:** Shows green sparkles at structures the villager recognizes
+- **ActionBar Log:** `Structure Match: oak_wall_segment (similarity: 0.94)`
+- **Console Log:** Full cosine similarity scores for all structure templates
+
+#### 3. Manual Concept Correction (The "Teacher" UI)
+Operator can correct mislabeled structures:
+1. Right-click villager → "Open Debug Menu"
+2. Select "Structure Memory" tab
+3. View recent structure observations with labels
+4. Click "Correct Label" → Input new label
+5. System re-vectorizes and updates `structure_templates` table
+
+#### 4. Performance Benchmarking (Gear Latency Warnings)
+- **Console Logging:** Every HTTP request logged with latency:
   ```
+  [DEBUG] [Layer 2] POST /api/vector/embed → 200 OK (18ms)
+  [DEBUG] [Layer 3] POST /api/brain/classify_intent → 200 OK (45ms)
   [DEBUG] [Layer 5] POST /api/memory/episode → 200 OK (125ms)
   [DEBUG] [Layer 6] LLM Inference Started (requestID: req_123)
   [DEBUG] [Layer 7] Polling... → Status: waiting
   [DEBUG] [Layer 7] Polling... → Status: ready
   [DEBUG] [Layer 7] Executing Intent: speak
   ```
+- **Threshold Warnings:** If Fast Gear >10ms or Slow Gear >5000ms:
+  ```
+  [WARN] Layer 2 exceeded threshold: 22ms (expected <10ms)
+  [WARN] Consider switching to MONOLITHIC mode
+  ```
 
-- **Debug Modal (Custom UI):** Operator can interact with villager to open a modal showing:
-  - **Live State View:** Current `[C, V, I, S, X]` vector and open Episode.
-  - **CRUD Operations:** Edit, delete, or refresh database records.
-  - **Knowledge Injection:** Manually add concepts/memories to Layer 5.
-  - **Brain Control:** Force-trigger LLM inference or clear Working Memory.
+#### 5. In-Game Commands
+Toggle modes without server restart:
+- `/scriptevent ai:mode monolithic` - Switch to MONOLITHIC mode
+- `/scriptevent ai:mode microservices` - Switch to MICROSERVICES mode
+- `/scriptevent ai:debug on` - Enable DEBUG_MODE
+- `/scriptevent ai:debug off` - Disable DEBUG_MODE
+
+#### 6. Debug Modal (Custom UI)
+Operator can interact with villager to open a modal showing:
+- **Live State View:** Current vector (5D or 384D) and open Episode
+- **AI Mode:** Current mode with toggle button
+- **Structure Memory:** List of learned structures with similarity scores
+- **CRUD Operations:** Edit, delete, or refresh database records
+- **Knowledge Injection:** Manually add concepts/memories to Layer 5
+- **Brain Control:** Force-trigger LLM inference or clear Working Memory
 
 ---
 
@@ -686,7 +929,9 @@ This flow serves as the architectural blueprint. When building:
 
 ## Glossary
 
-- **[C, V, I, S, X]:** The 5-axis semantic vector (Constructiveness, Value, Intensity, Sociality, Complexity).
+- **[C, V, I, S, X]:** The 5-axis semantic vector (Constructiveness, Value, Intensity, Sociality, Complexity) used in MONOLITHIC mode.
+- **384D Embedding:** Semantic vector generated by MiniLM-L6-v2 used in MICROSERVICES mode.
+- **AI_MODE:** Configuration toggle between MONOLITHIC (manual vectors) and MICROSERVICES (Transformers.js models).
 - **Episode:** A grouped sequence of vectors representing a coherent activity (e.g., "Building Session").
 - **IntentPacket:** The LLM's decision output, containing an action and parameters.
 - **DynamicProperties:** Bedrock's persistent key-value storage for entities, survives server restarts.
@@ -694,3 +939,8 @@ This flow serves as the architectural blueprint. When building:
 - **Slow Gear:** Layers 5-6, asynchronous processing in Node.js.
 - **Brain Scheduler:** Infrastructure middleware managing LLM request batching and prioritization.
 - **Invisible Telemetry:** All internal processing that doesn't surface to the player unless DEBUG_MODE is enabled.
+- **Fast Intent Routing:** MICROSERVICES feature that bypasses LLM for high-confidence intents (aggression, trading).
+- **Structure Template:** A building "recipe" storing relative block positions and instructions.
+- **Structure Blueprint:** High-level assembly guide linking multiple templates into functional zones.
+- **Ghost Blocks:** Visual placeholders (particles) showing where a villager will place blocks during construction.
+- **Transformers.js:** Browser-compatible ML library providing models for vectorization, intent classification, and summarization.

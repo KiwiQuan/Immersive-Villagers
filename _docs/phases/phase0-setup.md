@@ -220,7 +220,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
   - Check memory usage (should be 5-6GB)
   - Confirm server is listening on localhost:8080
 
-- [ ] **4. Create LLM client wrapper (`nodeDB/brain/llm_client.js`)**
+- [x] **4. Create LLM client wrapper (`nodeDB/brain/llm_client.js`)**
   - Create callLLM() function that posts to localhost:8080/completion
   - Set timeout to 10 seconds
   - Parse response and extract content field
