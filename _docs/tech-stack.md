@@ -52,7 +52,7 @@ High-frequency vector writes from multiple villagers (up to 100 writes/sec) + fa
 **Configuration:**
 
 ```javascript
-const { Pool } = require("pg");
+import { Pool } from "pg";
 
 const pool = new Pool({
   host: "localhost",
@@ -472,7 +472,7 @@ nodeDB/
 
 ```javascript
 // queries/episodes.js
-const { pool } = require("../db/pool");
+import { pool } from "../db/pool.js";
 
 /**
  * Writes an episode to the database.
@@ -511,7 +511,7 @@ async function writeEpisode(episodeSummary) {
   }
 }
 
-module.exports = { writeEpisode };
+export { writeEpisode };
 ```
 
 ---
@@ -533,7 +533,7 @@ Efficiently handle `@minecraft/server-net` requests from Script API while mainta
 **Architecture:**
 
 ```javascript
-const express = require("express");
+import express from "express";
 const app = express();
 
 // Middleware stack
@@ -600,8 +600,8 @@ app.listen(3000, () => console.log("[Backend] Listening on port 3000"));
 - **Route Organization:** Use Express Router to separate concerns:
 
   ```javascript
-  const memoryRoutes = require("./routes/memory");
-  const brainRoutes = require("./routes/brain");
+  import memoryRoutes from "./routes/memory.js";
+  import brainRoutes from "./routes/brain.js";
   app.use("/api/memory", memoryRoutes);
   app.use("/api/brain", brainRoutes);
   ```
@@ -683,7 +683,7 @@ app.post("/api/memory/episode", async (req, res) => {
 });
 
 // OR: Install express-async-errors
-require("express-async-errors");
+import "express-async-errors";
 app.post("/api/memory/episode", async (req, res) => {
   const result = await writeEpisode(req.body.episodeSummary);
   res.json({ status: "success", episodeID: result.id });
@@ -728,7 +728,7 @@ app.get("/api/brain/poll", (req, res) => {
 
 ```javascript
 // ✅ GOOD: Offload heavy work to Worker Threads or external process
-const { Worker } = require("worker_threads");
+import { Worker } from "worker_threads";
 
 app.get("/api/brain/poll", async (req, res) => {
   const result = await runInWorker("./heavy-task.js");
@@ -1358,7 +1358,7 @@ Support `DEBUG_MODE` toggle for development without spamming production logs or 
 
 ```javascript
 // logger.js
-const pino = require("pino");
+import pino from "pino";
 
 const logger = pino({
   level: process.env.DEBUG_MODE === "true" ? "debug" : "info",
@@ -1383,13 +1383,13 @@ const logger = pino({
         },
 });
 
-module.exports = logger;
+export default logger;
 ```
 
 **Usage in Backend:**
 
 ```javascript
-const logger = require("./logger");
+import logger from "./logger.js";
 
 // Basic logging
 logger.info("[Layer 5] Server started");
@@ -1476,8 +1476,8 @@ errorLog("Layer 4", "Sync failed", new Error("Network timeout"));
 - **Solution:** Use `pino-rotating-file-stream` or logrotate utility.
 
   ```javascript
-  const pino = require("pino");
-  const rfs = require("rotating-file-stream");
+  import pino from "pino";
+  import rfs from "rotating-file-stream";
 
   const stream = rfs.createStream("villager-ai.log", {
     size: "10M", // Rotate every 10MB
@@ -1556,7 +1556,8 @@ logger.info({ password: user.password }, "User logged in");
 
 ```javascript
 // ✅ GOOD: Redact sensitive fields
-const pino = require("pino");
+import pino from "pino";
+
 const logger = pino({
   redact: ["password", "token", "apiKey"],
 });
@@ -1594,7 +1595,9 @@ const logger = pino({
 
 ```javascript
 // ✅ GOOD: Listen for errors
-const stream = require("fs").createWriteStream("logs/villager-ai.log", {
+import fs from "fs";
+
+const stream = fs.createWriteStream("logs/villager-ai.log", {
   flags: "a",
 });
 
@@ -1670,7 +1673,7 @@ nodeDB/
 **Logger Setup (logger.js):**
 
 ```javascript
-const pino = require("pino");
+import pino from "pino";
 
 const logger = pino({
   level: process.env.LOG_LEVEL || "info",
@@ -1694,13 +1697,13 @@ const logger = pino({
         },
 });
 
-module.exports = logger;
+export default logger;
 ```
 
 **Request Logging Middleware:**
 
 ```javascript
-const logger = require("../utils/logger");
+import logger from "../utils/logger.js";
 
 function logRequest(req, res, next) {
   const start = Date.now();
@@ -1721,7 +1724,7 @@ function logRequest(req, res, next) {
   next();
 }
 
-module.exports = logRequest;
+export default logRequest;
 ```
 
 ---
@@ -1845,7 +1848,7 @@ class BrainScheduler {
 }
 
 const brainScheduler = new BrainScheduler();
-module.exports = brainScheduler;
+export default brainScheduler;
 ```
 
 **Best Practices:**
@@ -1903,8 +1906,8 @@ wget https://huggingface.co/.../llama-3-7b-q4_k_m.gguf
 **Node.js Integration:**
 
 ```javascript
-const axios = require("axios");
-const logger = require("./utils/logger");
+import axios from "axios";
+import logger from "./utils/logger.js";
 
 /**
  * Calls llama.cpp server with a prompt and returns the LLM response.
@@ -1935,7 +1938,7 @@ async function callLLM(prompt, maxTokens = 256) {
   }
 }
 
-module.exports = { callLLM };
+export { callLLM };
 ```
 
 ---
@@ -2175,16 +2178,18 @@ Support two runtime-switchable architectures (MONOLITHIC and MICROSERVICES) with
 
 ```javascript
 // Backend determines which vector to use based on AI_MODE
-const AI_MODE = process.env.AI_MODE || 'MONOLITHIC';
+const AI_MODE = process.env.AI_MODE || "MONOLITHIC";
 
 function getVectorColumn() {
-  return AI_MODE === 'MONOLITHIC' ? 'semantic_vector_manual' : 'semantic_vector_minilm';
+  return AI_MODE === "MONOLITHIC"
+    ? "semantic_vector_manual"
+    : "semantic_vector_minilm";
 }
 
 // Query episodes using active mode's vector
 const episodes = await pool.query(
   `SELECT * FROM episodes ORDER BY ${getVectorColumn()} <=> $1 LIMIT 10`,
-  [vectorData]
+  [vectorData],
 );
 ```
 
@@ -2201,30 +2206,39 @@ const episodes = await pool.query(
 **Model Loading:**
 
 ```javascript
-const { pipeline } = require('@xenova/transformers');
+import { pipeline } from "@xenova/transformers";
 
 async function initializeModels() {
   // Load models on server start (MICROSERVICES mode only)
-  if (AI_MODE !== 'MICROSERVICES') return;
-  
-  const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-  const intentClassifier = await pipeline('zero-shot-classification', 'Xenova/distilbert-base-uncased-mnli');
-  const nerExtractor = await pipeline('token-classification', 'Xenova/bert-base-multilingual-cased-ner-slavic');
-  const summarizer = await pipeline('summarization', 'Xenova/t5-small');
-  
+  if (AI_MODE !== "MICROSERVICES") return;
+
+  const embedder = await pipeline(
+    "feature-extraction",
+    "Xenova/all-MiniLM-L6-v2",
+  );
+  const intentClassifier = await pipeline(
+    "zero-shot-classification",
+    "Xenova/distilbert-base-uncased-mnli",
+  );
+  const nerExtractor = await pipeline(
+    "token-classification",
+    "Xenova/bert-base-multilingual-cased-ner-slavic",
+  );
+  const summarizer = await pipeline("summarization", "Xenova/t5-small");
+
   return { embedder, intentClassifier, nerExtractor, summarizer };
 }
 ```
 
 **Performance:**
 
-| Model | Size | Load Time | Inference Latency |
-|-------|------|-----------|------------------|
-| all-MiniLM-L6-v2 | ~90MB | 2-3s | <20ms |
-| distilbert-mnli | ~250MB | 3-5s | <50ms |
-| bert-ner-slavic | ~700MB | 5-8s | <30ms |
-| t5-small | ~240MB | 3-5s | <100ms |
-| **Total** | **~1.3GB** | **13-21s** | **<200ms** |
+| Model            | Size       | Load Time  | Inference Latency |
+| ---------------- | ---------- | ---------- | ----------------- |
+| all-MiniLM-L6-v2 | ~90MB      | 2-3s       | <20ms             |
+| distilbert-mnli  | ~250MB     | 3-5s       | <50ms             |
+| bert-ner-slavic  | ~700MB     | 5-8s       | <30ms             |
+| t5-small         | ~240MB     | 3-5s       | <100ms            |
+| **Total**        | **~1.3GB** | **13-21s** | **<200ms**        |
 
 ---
 
@@ -2337,10 +2351,10 @@ CREATE TABLE build_tasks (
    ```bash
    mkdir nodeDB && cd nodeDB
    npm init -y
-   
+
    # MONOLITHIC mode dependencies (MVP)
    npm install express pg pino axios dotenv
-   
+
    # MICROSERVICES mode additional dependencies (Phase 2+)
    npm install @xenova/transformers
    ```
@@ -2352,10 +2366,11 @@ CREATE TABLE build_tasks (
   "name": "immersive-villager-backend",
   "version": "1.0.0",
   "description": "Backend server for Immersive Villager AI",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "NODE_ENV=development DEBUG_MODE=true node server.js"
+    "dev": "NODE_ENV=development DEBUG_MODE=true AI_MODE=MICROSERVICES node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -2377,9 +2392,9 @@ CREATE TABLE build_tasks (
    # .env
    DB_HOST=localhost
    DB_PORT=5432
-   DB_NAME=villager_memory
-   DB_USER=minecraft_ai
-   DB_PASSWORD=secure_password
+   DB_NAME=immersive_villager
+   DB_USER=MarzeeQ
+   DB_PASSWORD=1234567890
    DEBUG_MODE=false
    LOG_LEVEL=info
    NODE_ENV=production
@@ -2752,6 +2767,15 @@ enqueue(request) {
 
 ## Document Changelog
 
+**Version 2.1 (Mar 3, 2026):**
+
+- Added dual AI architecture (MONOLITHIC vs MICROSERVICES modes)
+- Added Transformers.js integration (@xenova/transformers)
+- Added structure learning system documentation
+- Converted all code examples from CommonJS to ES6 modules (import/export)
+- Updated performance benchmarks for both AI modes
+- Added model loading patterns and Transformers.js best practices
+
 **Version 2.0 (Feb 22, 2026):**
 
 - Finalized technology choices: pg-pool, Express, Write-Through Cache, Pino, llama.cpp
@@ -2773,5 +2797,5 @@ enqueue(request) {
 **Document Type:** Technical Specification  
 **Author:** Senior Minecraft Scripting Engineer  
 **Status:** Finalized (Production Ready)  
-**Version:** 2.0  
-**Last Updated:** Feb 22, 2026
+**Version:** 2.1  
+**Last Updated:** Mar 3, 2026
