@@ -202,19 +202,19 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-- [ ] **1. Download and build llama.cpp**
+- [x] **1. Download and build llama.cpp**
   - Clone llama.cpp repository from GitHub
   - Run make command to compile for host platform
   - Verify compilation succeeded (./server binary exists)
   - Test basic inference with sample model
 
-- [ ] **2. Download Llama 3.1 8B Q4_K_M model**
+- [x] **2. Download Llama 3.1 8B Q4_K_M model**
   - Download model file from HuggingFace (approx 5GB)
   - Save to models/ directory in llama.cpp folder
   - Verify file integrity (check file size matches expected)
   - Test model loading with ./server command
 
-- [ ] **3. Start llama.cpp server**
+- [x] **3. Start llama.cpp server**
   - Run server with context length 2048, port 8080, 4-8 threads
   - Verify server starts without errors
   - Check memory usage (should be 5-6GB)
@@ -444,6 +444,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 ## Testing Checklist
 
 **Core Infrastructure:**
+
 - [ ] PostgreSQL accepts connections and returns query results
 - [ ] All base tables created successfully (villagers, concepts, villager_discoveries, episodes, relationships, working_memory)
 - [ ] Structure tables created (structure_templates, structure_blueprints, villager_world_map, build_tasks, pattern_observations)
@@ -460,6 +461,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 - [ ] Pino logs are written to file with proper formatting
 
 **AI_MODE Configuration:**
+
 - [ ] AI_MODE toggle command works: `/scriptevent ai:toggle_mode microservices`
 - [ ] Backend /api/config/ai_mode endpoint responds correctly
 - [ ] MONOLITHIC mode uses semantic_vector_manual columns
@@ -468,6 +470,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 - [ ] Model loading takes <30 seconds on first startup
 
 **DEBUG_MODE Features:**
+
 - [ ] DEBUG_MODE toggle works in both Script API and backend
 - [ ] Inference traces appear in ActionBar when enabled
 - [ ] Performance metrics logged to console
@@ -480,6 +483,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 ## Known Limitations at End of Phase 0
 
 **Core System:**
+
 - No event filtering (Layer 1) implemented yet
 - No vectorization logic (Layer 2) exists
 - No episode grouping (Layer 3) implemented
@@ -491,18 +495,21 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 - System is infrastructure-only, not playable
 
 **AI Modes:**
+
 - AI_MODE toggle exists but only infrastructure is present
 - MONOLITHIC mode has no Layer 2 vectorization yet (Phase 1)
 - MICROSERVICES mode has models loaded but no Layer 2 integration yet (Phase 1)
 - Can toggle between modes but no functional difference yet (both inactive)
 
 **Structure System:**
+
 - All structure tables exist but are empty
 - No pattern detection logic implemented (Phase 1)
 - No building execution system (Phase 1)
 - Templates and blueprints can't be created yet
 
 **Debug:**
+
 - DEBUG_MODE toggle works but limited debug features available
 - Inference tracing not functional (no layers to trace yet)
 - Performance benchmarking exists but nothing to benchmark yet
