@@ -226,7 +226,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
   - Parse response and extract content field
   - Add error handling for connection failures
 
-- [ ] **5. Test LLM inference**
+- [x] **5. Test LLM inference**
   - Send test prompt "You are a villager. Say hello."
   - Verify response is received within 2-4 seconds
   - Test with longer prompts (512 tokens)
