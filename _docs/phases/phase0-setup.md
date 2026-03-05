@@ -258,13 +258,13 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
   - Verify response parsing works
   - Test timeout handling (simulate slow endpoint)
 
-- [ ] **4. Create network helper module (`scripts/utils/network_helpers.js`)**
+- [x] **4. Create network helper module (`scripts/utils/network_helpers.js`)**
   - Wrap http.post() with try/catch and timeout logic
   - Wrap http.get() with retry mechanism (3 attempts)
   - Add logging for DEBUG_MODE
   - Export helper functions
 
-- [ ] **5. Test error scenarios**
+- [x] **5. Test error scenarios**
   - Stop backend server and verify Script API handles connection refused
   - Test timeout scenario (backend responds after 10+ seconds)
   - Verify error messages are logged correctly

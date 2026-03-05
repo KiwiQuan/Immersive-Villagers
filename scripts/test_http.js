@@ -5,6 +5,11 @@ import {
   HttpHeader,
   HttpRequestMethod,
 } from "@minecraft/server-net";
+import {
+  postRequest,
+  getRequest,
+  isBackendOnline,
+} from "./utils/network_helpers.js";
 
 /**
  * Tests HTTP POST request to backend /api/health endpoint.
@@ -83,18 +88,27 @@ async function testGetTestEndpoint() {
 
     const response = await http.get("http://localhost:3000/api/debug/test");
 
-    console.warn(`§a[HTTP Test] Test Endpoint Success! Status: ${response.status}`);
-    
+    console.warn(
+      `§a[HTTP Test] Test Endpoint Success! Status: ${response.status}`,
+    );
+
     const parsedResponse = JSON.parse(response.body);
     console.warn(`§a[HTTP Test] Message: ${parsedResponse.message}`);
-    console.warn(`§a[HTTP Test] Server Uptime: ${parsedResponse.testData.serverUptime.toFixed(2)}s`);
-    console.warn(`§a[HTTP Test] Node Version: ${parsedResponse.testData.nodeVersion}`);
+    console.warn(
+      `§a[HTTP Test] Server Uptime: ${parsedResponse.testData.serverUptime.toFixed(2)}s`,
+    );
+    console.warn(
+      `§a[HTTP Test] Node Version: ${parsedResponse.testData.nodeVersion}`,
+    );
 
     world.sendMessage("§a✓ Test endpoint GET successful!");
-
   } catch (error) {
-    console.error(`§c[HTTP Test] Test Endpoint Failed: ${error.message || error}`);
-    world.sendMessage(`§c✗ Test endpoint failed: ${error.message || "Connection error"}`);
+    console.error(
+      `§c[HTTP Test] Test Endpoint Failed: ${error.message || error}`,
+    );
+    world.sendMessage(
+      `§c✗ Test endpoint failed: ${error.message || "Connection error"}`,
+    );
   }
 }
 
@@ -106,10 +120,14 @@ async function testGetTestEndpoint() {
  */
 async function testTimeoutHandling() {
   try {
-    console.warn("§e[HTTP Test] Starting timeout test (10s delay, 5s timeout)...");
+    console.warn(
+      "§e[HTTP Test] Starting timeout test (10s delay, 5s timeout)...",
+    );
     console.warn("§e[HTTP Test] This should trigger a timeout error...");
 
-    const req = new HttpRequest("http://localhost:3000/api/debug/test/slow?delay=10");
+    const req = new HttpRequest(
+      "http://localhost:3000/api/debug/test/slow?delay=10",
+    );
     req.method = HttpRequestMethod.Get;
     req.timeout = 5;
 
@@ -120,9 +138,10 @@ async function testTimeoutHandling() {
     console.warn(`§c[HTTP Test] Unexpected success! Took ${duration}ms`);
     console.warn(`§c[HTTP Test] Response: ${response.body}`);
     world.sendMessage("§c⚠ Timeout test did NOT timeout (unexpected)");
-
   } catch (error) {
-    console.warn(`§a[HTTP Test] Timeout handled correctly! Error: ${error.message || error}`);
+    console.warn(
+      `§a[HTTP Test] Timeout handled correctly! Error: ${error.message || error}`,
+    );
     world.sendMessage("§a✓ Timeout handling works! Request was cancelled.");
   }
 }
@@ -145,6 +164,46 @@ async function runAllTests() {
   console.warn("§b[HTTP Test] ========================================");
   console.warn("§b[HTTP Test] All tests complete!");
   console.warn("§b[HTTP Test] ========================================");
+}
+
+/**
+ * Tests network helper functions (using the new wrapper utilities).
+ * Demonstrates retry logic and cleaner error handling.
+ * @returns {Promise<void>}
+ */
+async function testNetworkHelpers() {
+  try {
+    console.warn("§e[HTTP Test] Testing network helper functions...");
+
+    // Test backend connectivity
+    const online = await isBackendOnline();
+    console.warn(
+      `§a[HTTP Test] Backend online check: ${online ? "✓ Online" : "✗ Offline"}`,
+    );
+
+    if (!online) {
+      world.sendMessage("§c✗ Backend is offline! Cannot test helpers.");
+      return;
+    }
+
+    // Test POST with helper
+    const postData = await postRequest("/api/debug/health", {
+      test: "helper_test",
+      timestamp: Date.now(),
+    });
+    console.warn(
+      `§a[HTTP Test] Helper POST succeeded: ${JSON.stringify(postData)}`,
+    );
+
+    // Test GET with helper (includes retry logic)
+    const getData = await getRequest("/api/debug/test");
+    console.warn(`§a[HTTP Test] Helper GET succeeded: ${getData.message}`);
+
+    world.sendMessage("§a✓ Network helper functions working!");
+  } catch (error) {
+    console.error(`§c[HTTP Test] Helper test failed: ${error.message}`);
+    world.sendMessage(`§c✗ Helper test failed: ${error.message}`);
+  }
 }
 
 /**
@@ -192,13 +251,30 @@ function initializeDebugCommands() {
     }
   });
 
+  // Listen for test:helpers - Test network helper functions
+  system.afterEvents.scriptEventReceive.subscribe((event) => {
+    if (event.id === "test:helpers") {
+      world.sendMessage("§b[Debug] Testing network helper functions...");
+      testNetworkHelpers();
+    }
+  });
+
   console.warn("§a[HTTP Test] Debug commands registered!");
   console.warn("§a[HTTP Test] Available commands:");
   console.warn("§a  - /scriptevent test:post");
   console.warn("§a  - /scriptevent test:get");
   console.warn("§a  - /scriptevent test:endpoint");
   console.warn("§a  - /scriptevent test:timeout");
+  console.warn("§a  - /scriptevent test:helpers");
   console.warn("§a  - /scriptevent test:all");
 }
 
-export { testPostRequest, testGetRequest, testGetTestEndpoint, testTimeoutHandling, runAllTests, initializeDebugCommands };
+export {
+  testPostRequest,
+  testGetRequest,
+  testGetTestEndpoint,
+  testTimeoutHandling,
+  testNetworkHelpers,
+  runAllTests,
+  initializeDebugCommands,
+};
