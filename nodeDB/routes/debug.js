@@ -106,4 +106,49 @@ async function handleHealthCheck(req, res) {
 router.get("/health", handleHealthCheck);
 router.post("/health", handleHealthCheck);
 
+/**
+ * GET /api/debug/test
+ * Simple test endpoint for verifying GET requests from Script API.
+ * Returns test data with timestamp.
+ * @returns {Object} Test response data
+ */
+router.get("/test", (req, res) => {
+  res.json({
+    status: "success",
+    message: "Test endpoint reached successfully",
+    timestamp: Date.now(),
+    requestMethod: req.method,
+    testData: {
+      serverUptime: process.uptime(),
+      nodeVersion: process.version,
+    },
+  });
+});
+
+/**
+ * GET /api/debug/test/slow
+ * Simulates a slow endpoint that takes 10+ seconds to respond.
+ * Used to test timeout handling in Script API.
+ * @returns {Object} Response after delay
+ */
+router.get("/test/slow", async (req, res) => {
+  const delaySeconds = parseInt(req.query.delay) || 10;
+  
+  console.warn(`§e[Debug] Slow test endpoint triggered with ${delaySeconds}s delay`);
+  
+  await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+  
+  // Check if timeout middleware already sent a response
+  if (!res.headersSent) {
+    res.json({
+      status: "success",
+      message: "Slow endpoint completed",
+      delaySeconds,
+      timestamp: Date.now(),
+    });
+  } else {
+    console.warn(`§e[Debug] Slow endpoint completed but response already sent (timeout occurred)`);
+  }
+});
+
 export default router;

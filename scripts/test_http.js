@@ -1,4 +1,4 @@
-import { world } from "@minecraft/server";
+import { world, system } from "@minecraft/server";
 import {
   http,
   HttpRequest,
@@ -73,7 +73,62 @@ async function testGetRequest() {
 }
 
 /**
- * Runs both POST and GET tests sequentially.
+ * Tests HTTP GET request to test endpoint.
+ * Verifies response parsing and data structure.
+ * @returns {Promise<void>}
+ */
+async function testGetTestEndpoint() {
+  try {
+    console.warn("§e[HTTP Test] Starting GET test to /api/debug/test...");
+
+    const response = await http.get("http://localhost:3000/api/debug/test");
+
+    console.warn(`§a[HTTP Test] Test Endpoint Success! Status: ${response.status}`);
+    
+    const parsedResponse = JSON.parse(response.body);
+    console.warn(`§a[HTTP Test] Message: ${parsedResponse.message}`);
+    console.warn(`§a[HTTP Test] Server Uptime: ${parsedResponse.testData.serverUptime.toFixed(2)}s`);
+    console.warn(`§a[HTTP Test] Node Version: ${parsedResponse.testData.nodeVersion}`);
+
+    world.sendMessage("§a✓ Test endpoint GET successful!");
+
+  } catch (error) {
+    console.error(`§c[HTTP Test] Test Endpoint Failed: ${error.message || error}`);
+    world.sendMessage(`§c✗ Test endpoint failed: ${error.message || "Connection error"}`);
+  }
+}
+
+/**
+ * Tests timeout handling with a slow endpoint.
+ * Simulates a backend endpoint that takes 10+ seconds to respond.
+ * Should trigger Script API timeout (5 seconds).
+ * @returns {Promise<void>}
+ */
+async function testTimeoutHandling() {
+  try {
+    console.warn("§e[HTTP Test] Starting timeout test (10s delay, 5s timeout)...");
+    console.warn("§e[HTTP Test] This should trigger a timeout error...");
+
+    const req = new HttpRequest("http://localhost:3000/api/debug/test/slow?delay=10");
+    req.method = HttpRequestMethod.Get;
+    req.timeout = 5;
+
+    const startTime = Date.now();
+    const response = await http.request(req);
+    const duration = Date.now() - startTime;
+
+    console.warn(`§c[HTTP Test] Unexpected success! Took ${duration}ms`);
+    console.warn(`§c[HTTP Test] Response: ${response.body}`);
+    world.sendMessage("§c⚠ Timeout test did NOT timeout (unexpected)");
+
+  } catch (error) {
+    console.warn(`§a[HTTP Test] Timeout handled correctly! Error: ${error.message || error}`);
+    world.sendMessage("§a✓ Timeout handling works! Request was cancelled.");
+  }
+}
+
+/**
+ * Runs all HTTP tests sequentially.
  * Call this function to verify HTTP communication with backend.
  * @returns {Promise<void>}
  */
@@ -84,10 +139,66 @@ async function runAllTests() {
 
   await testPostRequest();
   await testGetRequest();
+  await testGetTestEndpoint();
+  await testTimeoutHandling();
 
   console.warn("§b[HTTP Test] ========================================");
   console.warn("§b[HTTP Test] All tests complete!");
   console.warn("§b[HTTP Test] ========================================");
 }
 
-export { testPostRequest, testGetRequest, runAllTests };
+/**
+ * Initializes scriptevent listeners for debug testing.
+ * Allows individual test triggering via /scriptevent commands.
+ */
+function initializeDebugCommands() {
+  // Listen for test:post - Trigger POST test
+  system.afterEvents.scriptEventReceive.subscribe((event) => {
+    if (event.id === "test:post") {
+      world.sendMessage("§b[Debug] Running POST test...");
+      testPostRequest();
+    }
+  });
+
+  // Listen for test:get - Trigger GET test
+  system.afterEvents.scriptEventReceive.subscribe((event) => {
+    if (event.id === "test:get") {
+      world.sendMessage("§b[Debug] Running GET test...");
+      testGetRequest();
+    }
+  });
+
+  // Listen for test:endpoint - Trigger test endpoint GET
+  system.afterEvents.scriptEventReceive.subscribe((event) => {
+    if (event.id === "test:endpoint") {
+      world.sendMessage("§b[Debug] Running test endpoint GET...");
+      testGetTestEndpoint();
+    }
+  });
+
+  // Listen for test:timeout - Trigger timeout test
+  system.afterEvents.scriptEventReceive.subscribe((event) => {
+    if (event.id === "test:timeout") {
+      world.sendMessage("§b[Debug] Running timeout test...");
+      testTimeoutHandling();
+    }
+  });
+
+  // Listen for test:all - Run all tests
+  system.afterEvents.scriptEventReceive.subscribe((event) => {
+    if (event.id === "test:all") {
+      world.sendMessage("§b[Debug] Running all HTTP tests...");
+      runAllTests();
+    }
+  });
+
+  console.warn("§a[HTTP Test] Debug commands registered!");
+  console.warn("§a[HTTP Test] Available commands:");
+  console.warn("§a  - /scriptevent test:post");
+  console.warn("§a  - /scriptevent test:get");
+  console.warn("§a  - /scriptevent test:endpoint");
+  console.warn("§a  - /scriptevent test:timeout");
+  console.warn("§a  - /scriptevent test:all");
+}
+
+export { testPostRequest, testGetRequest, testGetTestEndpoint, testTimeoutHandling, runAllTests, initializeDebugCommands };

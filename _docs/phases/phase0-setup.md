@@ -246,13 +246,13 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
   - Parse response body and log result
   - Add error handling for network failures
 
-- [ ] **2. Test POST request to backend**
+- [x] **2. Test POST request to backend**
   - Start Node.js backend on port 3000
   - Run test script in Minecraft server
   - Verify request reaches backend (check Pino logs)
   - Confirm response is received in Script API
 
-- [ ] **3. Test GET request from backend**
+- [x] **3. Test GET request from backend**
   - Create test endpoint in backend (GET /api/test)
   - Send GET request from Script API
   - Verify response parsing works
