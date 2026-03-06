@@ -8,9 +8,11 @@ cd llama.cpp
   -m .\models\llama-3.1-8b-instruct-q4_k_m.gguf ^
   --host localhost ^
   --port 8080 ^
-  -c 2048 ^
+  -c 4096 ^
+  -np 2 ^
   -ngl 99 ^
   -t 8 ^
   --context-shift ^
-  --cont-batching
+  --cont-batching ^
+  --flash-attn on
 pause

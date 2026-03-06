@@ -278,7 +278,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
 
 ### Steps
 
-- [ ] **1. Define Working Memory schema (`scripts/config/dynamic_properties_schema.js`)**
+- [x] **1. Define Working Memory schema (`scripts/config/dynamic_properties_schema.js`)**
   - Define property names (wm_currentFocus, wm_currentMood_C/V/I/S/X, etc.)
   - Define data types (TEXT, REAL, BOOLEAN, BIGINT)
   - Export schema as constant for reference
