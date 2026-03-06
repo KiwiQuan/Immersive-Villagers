@@ -1,30 +1,10 @@
-import { world } from "@minecraft/server";
 import { http, HttpRequest, HttpHeader, HttpRequestMethod } from "@minecraft/server-net";
+import { debugLog } from "./debug_mode_helper.js";
 
 const BACKEND_URL = "http://localhost:3000";
 const DEFAULT_TIMEOUT = 5;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1000;
-
-/**
- * Gets DEBUG_MODE state from world properties.
- * @returns {boolean} True if DEBUG_MODE is enabled
- */
-function isDebugMode() {
-  return world.getDynamicProperty("DEBUG_MODE") || false;
-}
-
-/**
- * Logs debug information if DEBUG_MODE is enabled.
- * @param {string} message - Log message
- * @param {Object} data - Additional data to log
- */
-function debugLog(message, data = {}) {
-  if (!isDebugMode()) return;
-  
-  const timestamp = new Date().toISOString();
-  console.warn(`[${timestamp}] [DEBUG] [Network] ${message}`, JSON.stringify(data));
-}
 
 /**
  * Waits for a specified duration (used for retry delays).
@@ -45,7 +25,7 @@ function sleep(ms) {
  */
 async function postRequest(endpoint, data, timeout = DEFAULT_TIMEOUT) {
   try {
-    debugLog("POST request starting", { endpoint, timeout });
+    debugLog("Network", "POST request starting", { endpoint, timeout });
 
     const req = new HttpRequest(`${BACKEND_URL}${endpoint}`);
     req.body = JSON.stringify(data);
@@ -57,7 +37,7 @@ async function postRequest(endpoint, data, timeout = DEFAULT_TIMEOUT) {
     const response = await http.request(req);
     const duration = Date.now() - startTime;
 
-    debugLog("POST request succeeded", {
+    debugLog("Network", "POST request succeeded", {
       endpoint,
       status: response.status,
       duration,
@@ -69,7 +49,7 @@ async function postRequest(endpoint, data, timeout = DEFAULT_TIMEOUT) {
 
     return JSON.parse(response.body);
   } catch (error) {
-    debugLog("POST request failed", {
+    debugLog("Network", "POST request failed", {
       endpoint,
       error: error.message || String(error),
     });
@@ -91,7 +71,7 @@ async function getRequest(endpoint, timeout = DEFAULT_TIMEOUT, maxRetries = MAX_
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      debugLog("GET request attempt", { endpoint, attempt, maxRetries, timeout });
+      debugLog("Network", "GET request attempt", { endpoint, attempt, maxRetries, timeout });
 
       const req = new HttpRequest(`${BACKEND_URL}${endpoint}`);
       req.method = HttpRequestMethod.Get;
@@ -101,7 +81,7 @@ async function getRequest(endpoint, timeout = DEFAULT_TIMEOUT, maxRetries = MAX_
       const response = await http.request(req);
       const duration = Date.now() - startTime;
 
-      debugLog("GET request succeeded", {
+      debugLog("Network", "GET request succeeded", {
         endpoint,
         status: response.status,
         duration,
@@ -116,7 +96,7 @@ async function getRequest(endpoint, timeout = DEFAULT_TIMEOUT, maxRetries = MAX_
     } catch (error) {
       lastError = error;
       
-      debugLog("GET request failed", {
+      debugLog("Network", "GET request failed", {
         endpoint,
         attempt,
         maxRetries,
@@ -167,4 +147,4 @@ async function isBackendOnline() {
   }
 }
 
-export { postRequest, getRequest, postRequestAsync, isBackendOnline, debugLog };
+export { postRequest, getRequest, postRequestAsync, isBackendOnline };

@@ -284,7 +284,7 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
   - Export schema as constant for reference
   - Add JSDoc documentation for each property
 
-- [ ] **2. Create DynamicProperties helper module (`scripts/utils/dynamic_properties_helpers.js`)**
+- [x] **2. Create DynamicProperties helper module (`scripts/utils/dynamic_properties_helpers.js`)**
   - Create getWorkingMemory(entity) function to read all WM properties
   - Create setWorkingMemory(entity, workingMemory) function to write all WM properties
   - Add validation to ensure entity.isValid() before operations
