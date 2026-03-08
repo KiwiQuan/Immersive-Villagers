@@ -2335,15 +2335,15 @@ CREATE TABLE build_tasks (
 
    # Create database
    sudo -u postgres psql
-   CREATE DATABASE villager_memory;
+   CREATE DATABASE immersive_villagers;
    CREATE USER minecraft_ai WITH PASSWORD 'secure_password';
-   GRANT ALL PRIVILEGES ON DATABASE villager_memory TO minecraft_ai;
+   GRANT ALL PRIVILEGES ON DATABASE immersive_villagers TO minecraft_ai;
    ```
 
 2. **Apply Database Schema:**
 
    ```bash
-   psql -U minecraft_ai -d villager_memory -f schema.sql
+   psql -U minecraft_ai -d immersive_villagers -f schema.sql
    ```
 
 3. **Initialize Node.js Backend:**

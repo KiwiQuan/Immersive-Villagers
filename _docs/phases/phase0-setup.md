@@ -290,19 +290,19 @@ CREATE INDEX idx_episodes_vector ON episodes USING ivfflat (semantic_vector vect
   - Add validation to ensure entity.isValid() before operations
   - Export helper functions with JSDoc
 
-- [ ] **3. Test property persistence**
+- [x] **3. Test property persistence**
   - Create test villager in-game
   - Set Working Memory properties via helper functions
   - Restart Minecraft server
   - Verify properties persist after restart
 
-- [ ] **4. Create property initialization (`scripts/layers/layer4_working_memory.js`)**
+- [x] **4. Create property initialization (`scripts/layers/layer4_working_memory.js`)**
   - Create initializeWorkingMemory(entity) function
   - Set default values for all WM properties (mood: 0.5 for all axes)
   - Add timestamp for wm_lastUpdate
   - Run initialization for all villagers on world load
 
-- [ ] **5. Test with multiple villagers**
+- [x] **5. Test with multiple villagers**
   - Spawn 5 test villagers in-game
   - Initialize Working Memory for each
   - Verify each villager has isolated properties

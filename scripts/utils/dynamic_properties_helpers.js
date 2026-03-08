@@ -35,8 +35,7 @@ function getWorkingMemory(entity) {
       lastUpdate: entity.getDynamicProperty("wm_lastUpdate") || 0,
       needsSync: entity.getDynamicProperty("wm_needsSync") || false,
       lastSyncSuccess: entity.getDynamicProperty("wm_lastSyncSuccess") || 0,
-      networkStatus:
-        entity.getDynamicProperty("wm_networkStatus") || "unknown",
+      networkStatus: entity.getDynamicProperty("wm_networkStatus") || "unknown",
     };
 
     debugLog("DynamicProperties", "getWorkingMemory succeeded", {
@@ -119,10 +118,14 @@ function setWorkingMemory(entity, workingMemory) {
  */
 function updateWorkingMemoryProperty(entity, propertyName, value) {
   if (!entity || !entity.isValid) {
-    debugLog("DynamicProperties", "updateWorkingMemoryProperty failed: entity invalid", {
-      entityId: entity?.id || "unknown",
-      propertyName,
-    });
+    debugLog(
+      "DynamicProperties",
+      "updateWorkingMemoryProperty failed: entity invalid",
+      {
+        entityId: entity?.id || "unknown",
+        propertyName,
+      },
+    );
     return false;
   }
 
@@ -181,6 +184,7 @@ function initializeWorkingMemory(entity) {
     }
 
     entity.setDynamicProperty("wm_lastUpdate", Date.now());
+    entity.setDynamicProperty("wm_needsSync", true);
 
     debugLog("DynamicProperties", "initializeWorkingMemory succeeded", {
       villagerID: entity.id,

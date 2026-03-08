@@ -24,9 +24,9 @@ Tick Efficiency: Offload heavy math or logic to the Node.js backend. Keep the ga
 
 Async Management: Use system.run() or system.runTimeout() to handle logic that shouldn't block the main game thread.
 
-Vector Math: Use standardized vector operations for [C, V, I, S, X] calculations. Render units clearly (e.g., blocks, ticks).
+Vector Math: Use standardized vector operations for [C, V, I, S, X] calculations. or the miniLM generated vectors to Render units clearly
 
-use context7 MCP to get updated docs and context of documentation. don't assume you have full context of a documentation.
+use context7 MCP for each step in a feature to get updated docs and context of documentation. don't assume you have full context of a documentation.
 
 7-Layer Brain Architecture Rules:
 

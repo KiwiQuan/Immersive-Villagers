@@ -1,6 +1,8 @@
 import express from "express";
 import debugRoutes from "./routes/debug.js";
 import llmRoutes from "./routes/llm.js";
+import memoryRoutes from "./routes/memory.js";
+import villagersRoutes from "./routes/villagers.js";
 import logger from "./utils/logger.js";
 
 /**
@@ -52,8 +54,11 @@ function createApp() {
   // LLM routes (Chat endpoint for testing)
   app.use("/api/llm", llmRoutes);
 
-  // Layer 5: Memory routes (Episode writes, Working Memory sync) - Phase 0 Feature 4+
-  // app.use("/api/memory", memoryRoutes);
+  // Villager lifecycle routes (Registration, removal) - Must come before memory routes
+  app.use("/api/villagers", villagersRoutes);
+
+  // Layer 5: Memory routes (Episode writes, Working Memory sync)
+  app.use("/api/memory", memoryRoutes);
 
   // Layer 6: Brain routes (LLM queue, polling) - Phase 0 Feature 4+
   // app.use("/api/brain", brainRoutes);

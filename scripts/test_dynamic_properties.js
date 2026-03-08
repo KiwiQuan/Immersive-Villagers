@@ -35,12 +35,10 @@ function testDynamicPropertiesHelpers(sourceEntity) {
 
     const testVillager = villagers[0];
     console.warn(`§b[DP Test] Testing on villager: ${testVillager.id}`);
-    world.sendMessage(`§b[DP Test] Testing on villager: ${testVillager.nameTag || testVillager.id}`);
+    world.sendMessage(
+      `§b[DP Test] Testing on villager: ${testVillager.nameTag || testVillager.id}`,
+    );
 
-    console.warn(`§e[DP Test] Debug: hasWorkingMemory type = ${typeof hasWorkingMemory}`);
-    console.warn(`§e[DP Test] Debug: entity.isValid type = ${typeof testVillager.isValid}`);
-    console.warn(`§e[DP Test] Debug: entity.getDynamicProperty type = ${typeof testVillager.getDynamicProperty}`);
-    
     console.warn("§e[DP Test] Step 1: Checking if Working Memory exists...");
     const exists = hasWorkingMemory(testVillager);
     console.warn(
@@ -63,7 +61,9 @@ function testDynamicPropertiesHelpers(sourceEntity) {
       return;
     }
     console.warn("§a[DP Test] ✓ Read succeeded:");
-    console.warn(`§a  - Current Focus: ${workingMemory.currentFocus || "none"}`);
+    console.warn(
+      `§a  - Current Focus: ${workingMemory.currentFocus || "none"}`,
+    );
     console.warn(
       `§a  - Current Mood: C=${workingMemory.currentMood.C}, V=${workingMemory.currentMood.V}, I=${workingMemory.currentMood.I}, S=${workingMemory.currentMood.S}, X=${workingMemory.currentMood.X}`,
     );
@@ -81,7 +81,9 @@ function testDynamicPropertiesHelpers(sourceEntity) {
       world.sendMessage("§c✗ Failed to update property!");
       return;
     }
-    console.warn(`§a[DP Test] ✓ Updated wm_currentFocus to: ${sourceEntity.id}`);
+    console.warn(
+      `§a[DP Test] ✓ Updated wm_currentFocus to: ${sourceEntity.id}`,
+    );
     world.sendMessage("§a✓ Property update successful");
 
     console.warn("§e[DP Test] Step 5: Writing full Working Memory...");
@@ -129,9 +131,7 @@ function testDynamicPropertiesHelpers(sourceEntity) {
     console.warn("§b[DP Test] All tests passed!");
     console.warn("§b[DP Test] ========================================");
     world.sendMessage("§a§l✓ ALL TESTS PASSED!");
-    world.sendMessage(
-      "§aNow restart the server to test persistence (Step 3)",
-    );
+    world.sendMessage("§aNow restart the server to test persistence (Step 3)");
   } catch (error) {
     console.error(`§c[DP Test] Test failed: ${error.message}`);
     world.sendMessage(`§c✗ Test failed: ${error.message}`);
@@ -150,7 +150,7 @@ function testClearProperties(sourceEntity) {
     const villagers = dimension.getEntities({
       type: "minecraft:villager_v2",
       location: sourceLocation,
-      maxDistance: 10,
+      maxDistance: 500,
     });
 
     if (villagers.length === 0) {
@@ -159,9 +159,7 @@ function testClearProperties(sourceEntity) {
     }
 
     const testVillager = villagers[0];
-    console.warn(
-      `§b[DP Test] Clearing Working Memory for: ${testVillager.id}`,
-    );
+    console.warn(`§b[DP Test] Clearing Working Memory for: ${testVillager.id}`);
 
     const cleared = clearWorkingMemory(testVillager);
     if (!cleared) {
