@@ -1,6 +1,6 @@
 # 📜 Project Deviations & Architectural Truth
 
-**Last Updated:** 2026-03-06
+**Last Updated:** 2026-03-08
 
 > **Purpose:** This document tracks intentional deviations from the original project documentation. In any conflict between the docs and this file, **this file wins.**
 
@@ -293,3 +293,65 @@ CREATE INDEX idx_pattern_observations_hash ON pattern_observations(pattern_hash)
 ## 5. Database Queries
 
 - **Queries Folder** in db folder is were we store the exported functions that will query the database. this is to keep separation of concerns principle.
+
+---
+
+## 6. Villager Detection Method: Proximity-Based vs Event-Driven
+
+**Decision:** Use **pure proximity-based detection** instead of `afterEvents.entityLoad` / `afterEvents.entityRemove`.
+
+### Why Proximity Won
+
+After extensive sandbox testing (see `scripts/sandbox/test_entity_load_detection.js` (file was deleted) → `test_proximity_detection.js`), we discovered critical inconsistencies with event-based and `isValid` property approaches:
+
+| Method                          | Issue                                     | Result                                                   |
+| ------------------------------- | ----------------------------------------- | -------------------------------------------------------- |
+| **`entityLoad` event**          | Inconsistent trigger distance (too close) | Villagers only detected when player is within ~30 blocks |
+| **`entityRemove` event**        | Inconsistent trigger distance (too far)   | Villagers remained "loaded" even 150+ blocks away        |
+| **`isValid` property**          | Unreliable across chunk boundaries        | False positives/negatives when chunks load/unload        |
+| **Polling + Events (Hybrid)**   | Better but still inconsistent             | Improved detection but occasional desyncs                |
+| **Proximity-Based (Geometric)** | **100% consistent**                       | ✅ Works every time, no edge cases                       |
+
+### Proximity Detection Logic
+
+```javascript
+// Every 20 ticks (1 second):
+1. Query all villagers via dimension.getEntities()
+2. Calculate distance to nearest player (Euclidean 3D)
+3. If distance <= 150 blocks → ACTIVE
+4. If distance > 150 blocks → INACTIVE
+5. Detect NEW villagers during scan (not in tracked Map)
+```
+
+**Advantages:**
+
+- ✅ **Pure geometry** - No reliance on engine event quirks
+- ✅ **Predictable** - Always triggers at exact distance threshold
+- ✅ **Resilient** - Works across all Bedrock versions and chunk behaviors
+- ✅ **Handles death** - Dead villagers naturally drop out of `getEntities()` query
+
+**Tradeoffs:**
+
+- ⚠️ Runs every 20 ticks (vs instant events)
+- ⚠️ Slight delay (1 second max) for state changes
+- ✅ **Acceptable** - Villagers don't need instant reactions; 1-second latency is imperceptible
+
+### Implementation Files
+
+- **Sandbox Test:** `scripts/sandbox/test_proximity_detection.js`
+- **Production:** `scripts/systems/villager_lifecycle.js` (to be refactored with proximity logic)
+
+### Configuration Constants
+
+```javascript
+const PROXIMITY_CHECK_RADIUS = 150; // blocks
+const PROXIMITY_CHECK_INTERVAL = 20; // ticks (1 second)
+```
+
+**Tuning Notes:**
+
+- `150 blocks` = Safe buffer beyond typical chunk render distance
+- `20 ticks` = Balance between responsiveness and performance
+- Can be adjusted in production based on server load
+
+---
