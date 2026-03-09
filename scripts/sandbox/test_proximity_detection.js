@@ -26,12 +26,141 @@ let totalProximityChecks = 0;
 let totalNewDetections = 0;
 let totalActivations = 0;
 let totalDeactivations = 0;
+let totalDeaths = 0;
 let proximityCheckHandle = null;
 let particleVisualizationEnabled = false;
 let particleVisualizationHandle = null;
 
 const PROXIMITY_CHECK_RADIUS = 150; // blocks
 const PROXIMITY_CHECK_INTERVAL = 20; // ticks (1 second)
+
+/**
+ * Death event handler: Detects when a villager dies.
+ * This is separate from proximity detection because death is a definitive event.
+ */
+function startDeathDetection() {
+  world.afterEvents.entityDie.subscribe((event) => {
+    const entity = event.deadEntity;
+    
+    if (!entity || entity.typeId !== "minecraft:villager_v2") return;
+    
+    const villagerID = entity.id;
+    
+    // Check if this was a tracked villager
+    if (detectedVillagers.has(villagerID)) {
+      totalDeaths++;
+      
+      const metadata = detectedVillagers.get(villagerID);
+      const villagerName = metadata.nameTag || "Unnamed";
+      
+      // Remove from all tracking structures
+      detectedVillagers.delete(villagerID);
+      currentVillagerIDs.delete(villagerID);
+      
+      // Notify players
+      const allPlayers = world.getAllPlayers();
+      for (const player of allPlayers) {
+        player.sendMessage(
+          `§c[Sandbox] Villager DIED: ${villagerName} (removed from tracking)`
+        );
+      }
+      
+      console.warn(
+        `§c[Sandbox] Villager ${villagerID} (${villagerName}) DIED - removed from tracking`
+      );
+      
+      // NOTE: In production, this would trigger database removal via DELETE query
+    }
+  });
+  
+  console.warn("§a[Sandbox] Death detection enabled");
+}
+
+/**
+ * Player leave handler: Re-check proximity for all active villagers when a player leaves.
+ * Deactivates villagers that are no longer within range of ANY remaining player.
+ */
+function startPlayerLeaveDetection() {
+  world.afterEvents.playerLeave.subscribe((event) => {
+    system.runTimeout(() => {
+      const remainingPlayers = world.getAllPlayers();
+      
+      if (remainingPlayers.length === 0) {
+        // No players left - deactivate all villagers
+        const villagerCount = currentVillagerIDs.size;
+        
+        if (villagerCount > 0) {
+          totalDeactivations += villagerCount;
+          
+          console.warn(
+            `§c[Sandbox] All players left - deactivating ${villagerCount} villagers`
+          );
+          
+          currentVillagerIDs.clear();
+          
+          // NOTE: In production → Batch UPDATE is_active = false
+        }
+      } else {
+        // Some players remain - check which villagers are still in range
+        const villagersToDeactivate = [];
+        
+        for (const villagerID of currentVillagerIDs) {
+          const metadata = detectedVillagers.get(villagerID);
+          if (!metadata) continue;
+          
+          // Calculate distance to nearest REMAINING player
+          let nearestPlayerDistance = Infinity;
+          for (const player of remainingPlayers) {
+            const dx = player.location.x - metadata.location.x;
+            const dy = player.location.y - metadata.location.y;
+            const dz = player.location.z - metadata.location.z;
+            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            
+            if (distance < nearestPlayerDistance) {
+              nearestPlayerDistance = distance;
+            }
+          }
+          
+          // If no remaining player is within radius, deactivate
+          if (nearestPlayerDistance > PROXIMITY_CHECK_RADIUS) {
+            villagersToDeactivate.push(villagerID);
+          }
+        }
+        
+        // Deactivate villagers that are now out of range
+        if (villagersToDeactivate.length > 0) {
+          totalDeactivations += villagersToDeactivate.length;
+          
+          console.warn(
+            `§c[Sandbox] Player left - deactivating ${villagersToDeactivate.length} villagers (out of range)`
+          );
+          
+          for (const villagerID of villagersToDeactivate) {
+            currentVillagerIDs.delete(villagerID);
+            
+            const metadata = detectedVillagers.get(villagerID);
+            const villagerName = metadata ? metadata.nameTag : villagerID;
+            
+            console.warn(
+              `§c[Sandbox] Villager ${villagerID} (${villagerName}) marked INACTIVE (no nearby players)`
+            );
+            
+            // Notify remaining players
+            for (const player of remainingPlayers) {
+              player.sendMessage(
+                `§c[Sandbox] Villager INACTIVE: ${villagerName} (player left area)`
+              );
+            }
+            
+            // NOTE: In production → setVillagerActive(villagerID, false)
+          }
+        }
+      }
+    }, 1); // Small delay to ensure playerLeave event completes
+  });
+  
+  console.warn("§a[Sandbox] Player leave detection enabled");
+}
 
 /**
  * Proximity-based detection: Scans all villagers and checks distance to players.
@@ -487,6 +616,7 @@ function showStatus() {
     player.sendMessage(`§a New villagers detected: ${totalNewDetections}`);
     player.sendMessage(`§a Activations: ${totalActivations}`);
     player.sendMessage(`§c Deactivations: ${totalDeactivations}`);
+    player.sendMessage(`§4 Deaths: ${totalDeaths}`);
     player.sendMessage("§b====================================");
     player.sendMessage(`§e Total detected: ${detectedVillagers.size}`);
     player.sendMessage(`§a Currently active: ${currentVillagerIDs.size}`);
@@ -504,6 +634,7 @@ function showStatus() {
   console.warn(`§a New detections: ${totalNewDetections}`);
   console.warn(`§a Activations: ${totalActivations}`);
   console.warn(`§c Deactivations: ${totalDeactivations}`);
+  console.warn(`§4 Deaths: ${totalDeaths}`);
   console.warn(`§e Total detected: ${detectedVillagers.size}`);
   console.warn(`§a Currently active: ${currentVillagerIDs.size}`);
   console.warn(`§7 Actual visible: ${actualVisibleCount}`);
@@ -535,6 +666,7 @@ function resetTest() {
   totalNewDetections = 0;
   totalActivations = 0;
   totalDeactivations = 0;
+  totalDeaths = 0;
 
   if (proximityCheckHandle !== null) {
     system.clearRun(proximityCheckHandle);
@@ -555,6 +687,12 @@ function resetTest() {
  * Initialize sandbox commands.
  */
 function initializeProximitySandbox() {
+  // Always enable death detection (runs automatically)
+  startDeathDetection();
+  
+  // Always enable player leave detection (runs automatically)
+  startPlayerLeaveDetection();
+  
   // Start test
   system.afterEvents.scriptEventReceive.subscribe((event) => {
     if (event.id === "sandbox:start") {
