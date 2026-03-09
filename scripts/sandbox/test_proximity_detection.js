@@ -2,41 +2,111 @@ import { world, system } from "@minecraft/server";
 import { ActionFormData } from "@minecraft/server-ui";
 
 /**
- * SANDBOX TEST: Method D - Proximity-Based Detection (REFINED)
- *
- * PURPOSE: Test pure proximity-based villager tracking.
- * No reliance on entityLoad/entityRemove events.
- *
- * LOGIC:
- * 1. Get all villagers via getEntities() (fresh query each cycle)
- * 2. Calculate distance to nearest player
- * 3. If distance <= RADIUS → Add to currentVillagerIDs (active)
- * 4. If distance > RADIUS → Remove from currentVillagerIDs (inactive)
- * 5. Detect NEW villagers during scan (not in detectedVillagers Map)
- *
- * ADVANTAGES:
- * - Pure geometry, no engine quirks
- * - 100% consistent detection
- * - Works across all Bedrock versions
+ * SANDBOX TEST: API-Native Proximity Detection (REFACTORED)
+ * 
+ * PURPOSE: Test player-centric villager tracking using native API filtering.
+ * Uses location + maxDistance parameters to let the C++ engine handle distance calculations.
+ * 
+ * IMPROVEMENTS FROM CODE REVIEW:
+ * - DRY: Extracted distance calculation functions
+ * - Performance: API-native filtering (O(m) instead of O(n × m))
+ * - Maintainability: Command registry pattern (1 event subscription)
+ * - UX: Reduced notification spam (only nearby players)
+ * - Documentation: JSDoc type annotations
+ * - Error Handling: Try-catch in async functions
  */
+
+// ========================================
+// CONSTANTS & CONFIGURATION
+// ========================================
+
+const CONFIG = {
+  proximityRadius: 150, // blocks
+  proximityInterval: 20, // ticks (1 second)
+  particleInterval: 5, // ticks (4 times/sec - reduced from 20/sec)
+  notificationRadius: 200, // blocks (only notify nearby players)
+};
+
+// ========================================
+// STATE MANAGEMENT
+// ========================================
 
 const detectedVillagers = new Map(); // villagerID -> { firstSeen, lastSeen, location, nameTag }
 const currentVillagerIDs = new Set(); // Villagers within proximity radius
-let totalProximityChecks = 0;
-let totalNewDetections = 0;
-let totalActivations = 0;
-let totalDeactivations = 0;
-let totalDeaths = 0;
-let proximityCheckHandle = null;
-let particleVisualizationEnabled = false;
-let particleVisualizationHandle = null;
 
-const PROXIMITY_CHECK_RADIUS = 150; // blocks
-const PROXIMITY_CHECK_INTERVAL = 20; // ticks (1 second)
+const metrics = {
+  proximityChecks: 0,
+  newDetections: 0,
+  activations: 0,
+  deactivations: 0,
+  deaths: 0,
+};
+
+const handles = {
+  proximityCheck: null,
+  particleVisualization: null,
+};
+
+let particleVisualizationEnabled = false;
+
+// ========================================
+// UTILITY FUNCTIONS (DRY PRINCIPLE)
+// ========================================
+
+/**
+ * Calculates 3D Euclidean distance between two locations.
+ * @param {Object} loc1 - First location {x, y, z}
+ * @param {number} loc1.x - X coordinate
+ * @param {number} loc1.y - Y coordinate
+ * @param {number} loc1.z - Z coordinate
+ * @param {Object} loc2 - Second location {x, y, z}
+ * @returns {number} Distance in blocks
+ */
+function calculateDistance(loc1, loc2) {
+  const dx = loc1.x - loc2.x;
+  const dy = loc1.y - loc2.y;
+  const dz = loc1.z - loc2.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+/**
+ * Finds the nearest player distance to a given location.
+ * @param {Object} location - Target location {x, y, z}
+ * @param {Player[]} players - Array of players
+ * @returns {number} Distance to nearest player (Infinity if no players)
+ */
+function getNearestPlayerDistance(location, players) {
+  if (players.length === 0) return Infinity;
+  
+  return Math.min(
+    ...players.map(player => calculateDistance(location, player.location))
+  );
+}
+
+/**
+ * Notifies only players within notification radius.
+ * @param {string} message - Message to send
+ * @param {Object} location - Event location {x, y, z}
+ * @param {number} [radius=200] - Notification radius in blocks
+ */
+function notifyNearbyPlayers(message, location, radius = CONFIG.notificationRadius) {
+  const allPlayers = world.getAllPlayers();
+  
+  for (const player of allPlayers) {
+    const distance = calculateDistance(player.location, location);
+    if (distance <= radius) {
+      player.sendMessage(message);
+    }
+  }
+}
+
+// ========================================
+// DETECTION LOGIC
+// ========================================
 
 /**
  * Death event handler: Detects when a villager dies.
- * This is separate from proximity detection because death is a definitive event.
+ * Removes from tracking and logs the event.
  */
 function startDeathDetection() {
   world.afterEvents.entityDie.subscribe((event) => {
@@ -46,9 +116,8 @@ function startDeathDetection() {
     
     const villagerID = entity.id;
     
-    // Check if this was a tracked villager
     if (detectedVillagers.has(villagerID)) {
-      totalDeaths++;
+      metrics.deaths++;
       
       const metadata = detectedVillagers.get(villagerID);
       const villagerName = metadata.nameTag || "Unnamed";
@@ -57,19 +126,15 @@ function startDeathDetection() {
       detectedVillagers.delete(villagerID);
       currentVillagerIDs.delete(villagerID);
       
-      // Notify players
-      const allPlayers = world.getAllPlayers();
-      for (const player of allPlayers) {
-        player.sendMessage(
-          `§c[Sandbox] Villager DIED: ${villagerName} (removed from tracking)`
-        );
-      }
+      // Notify nearby players only
+      notifyNearbyPlayers(
+        `§c[Sandbox] Villager DIED: ${villagerName} (removed from tracking)`,
+        metadata.location
+      );
       
       console.warn(
         `§c[Sandbox] Villager ${villagerID} (${villagerName}) DIED - removed from tracking`
       );
-      
-      // NOTE: In production, this would trigger database removal via DELETE query
     }
   });
   
@@ -77,11 +142,11 @@ function startDeathDetection() {
 }
 
 /**
- * Player leave handler: Re-check proximity for all active villagers when a player leaves.
- * Deactivates villagers that are no longer within range of ANY remaining player.
+ * Player leave handler: Re-evaluates proximity for all active villagers.
+ * Deactivates villagers no longer within range of any remaining player.
  */
 function startPlayerLeaveDetection() {
-  world.afterEvents.playerLeave.subscribe((event) => {
+  world.afterEvents.playerLeave.subscribe(() => {
     system.runTimeout(() => {
       const remainingPlayers = world.getAllPlayers();
       
@@ -90,15 +155,13 @@ function startPlayerLeaveDetection() {
         const villagerCount = currentVillagerIDs.size;
         
         if (villagerCount > 0) {
-          totalDeactivations += villagerCount;
+          metrics.deactivations += villagerCount;
           
           console.warn(
             `§c[Sandbox] All players left - deactivating ${villagerCount} villagers`
           );
           
           currentVillagerIDs.clear();
-          
-          // NOTE: In production → Batch UPDATE is_active = false
         }
       } else {
         // Some players remain - check which villagers are still in range
@@ -108,28 +171,18 @@ function startPlayerLeaveDetection() {
           const metadata = detectedVillagers.get(villagerID);
           if (!metadata) continue;
           
-          // Calculate distance to nearest REMAINING player
-          let nearestPlayerDistance = Infinity;
-          for (const player of remainingPlayers) {
-            const dx = player.location.x - metadata.location.x;
-            const dy = player.location.y - metadata.location.y;
-            const dz = player.location.z - metadata.location.z;
-            const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            
-            if (distance < nearestPlayerDistance) {
-              nearestPlayerDistance = distance;
-            }
-          }
+          // Calculate distance to nearest remaining player
+          const nearestDistance = getNearestPlayerDistance(metadata.location, remainingPlayers);
           
           // If no remaining player is within radius, deactivate
-          if (nearestPlayerDistance > PROXIMITY_CHECK_RADIUS) {
+          if (nearestDistance > CONFIG.proximityRadius) {
             villagersToDeactivate.push(villagerID);
           }
         }
         
         // Deactivate villagers that are now out of range
         if (villagersToDeactivate.length > 0) {
-          totalDeactivations += villagersToDeactivate.length;
+          metrics.deactivations += villagersToDeactivate.length;
           
           console.warn(
             `§c[Sandbox] Player left - deactivating ${villagersToDeactivate.length} villagers (out of range)`
@@ -151,102 +204,90 @@ function startPlayerLeaveDetection() {
                 `§c[Sandbox] Villager INACTIVE: ${villagerName} (player left area)`
               );
             }
-            
-            // NOTE: In production → setVillagerActive(villagerID, false)
           }
         }
       }
-    }, 1); // Small delay to ensure playerLeave event completes
+    }, 1);
   });
   
   console.warn("§a[Sandbox] Player leave detection enabled");
 }
 
 /**
- * Proximity-based detection: Scans all villagers and checks distance to players.
- * Handles both new villager detection and active/inactive state management.
+ * API-native proximity detection: Uses location + maxDistance for efficient filtering.
+ * The C++ engine handles distance calculations - no manual loops!
  */
 function startProximityDetection() {
-  proximityCheckHandle = system.runInterval(() => {
+  handles.proximityCheck = system.runInterval(() => {
     try {
-      totalProximityChecks++;
+      metrics.proximityChecks++;
 
       const allPlayers = world.getAllPlayers();
       if (allPlayers.length === 0) return;
 
       const dimension = world.getDimension("overworld");
-      const allVillagers = dimension.getEntities({
-        type: "minecraft:villager_v2",
-      });
-
       const villagersWithinRadius = new Set();
 
-      // Scan all villagers
-      for (const villager of allVillagers) {
-        if (!villager || !villager.isValid) continue;
+      // For each player, get ALL villagers within radius
+      // Engine does distance calculation in C++ (FAST!)
+      for (const player of allPlayers) {
+        const nearbyVillagers = dimension.getEntities({
+          type: "minecraft:villager_v2",
+          location: player.location,
+          maxDistance: CONFIG.proximityRadius,
+        });
 
-        const villagerID = villager.id;
-        const now = Date.now();
+        // Process each villager found near this player
+        for (const villager of nearbyVillagers) {
+          if (!villager || !villager.isValid) continue;
 
-        // Calculate distance to nearest player
-        let nearestPlayerDistance = Infinity;
-        for (const player of allPlayers) {
-          const dx = player.location.x - villager.location.x;
-          const dy = player.location.y - villager.location.y;
-          const dz = player.location.z - villager.location.z;
-          const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-          if (distance < nearestPlayerDistance) {
-            nearestPlayerDistance = distance;
-          }
-        }
-
-        const isWithinRadius = nearestPlayerDistance <= PROXIMITY_CHECK_RADIUS;
-
-        // NEW VILLAGER DETECTION
-        if (!detectedVillagers.has(villagerID)) {
-          totalNewDetections++;
-
-          detectedVillagers.set(villagerID, {
-            firstSeen: now,
-            lastSeen: now,
-            location: villager.location,
-            nameTag: villager.nameTag || "Unnamed",
-          });
-
-          for (const player of allPlayers) {
-            player.sendMessage(
-              `§a[Sandbox] NEW villager detected: ${villager.nameTag || "Unnamed"} (${Math.round(nearestPlayerDistance)}m)`,
-            );
-          }
-
-          console.warn(
-            `§a[Sandbox] NEW villager detected: ${villagerID} at ${Math.round(nearestPlayerDistance)}m`,
-          );
-        } else {
-          // Update metadata for existing villager
-          const metadata = detectedVillagers.get(villagerID);
-          metadata.lastSeen = now;
-          metadata.location = villager.location;
-        }
-
-        // ACTIVE/INACTIVE STATE MANAGEMENT
-        if (isWithinRadius) {
+          const villagerID = villager.id;
+          const now = Date.now();
+          
           villagersWithinRadius.add(villagerID);
 
-          // Villager entered radius (activation)
-          if (!currentVillagerIDs.has(villagerID)) {
-            totalActivations++;
-            currentVillagerIDs.add(villagerID);
+          // NEW VILLAGER DETECTION
+          if (!detectedVillagers.has(villagerID)) {
+            metrics.newDetections++;
 
-            for (const player of allPlayers) {
-              player.sendMessage(
-                `§a[Sandbox] Villager ACTIVE: ${villager.nameTag || "Unnamed"} (${Math.round(nearestPlayerDistance)}m)`,
-              );
-            }
+            detectedVillagers.set(villagerID, {
+              firstSeen: now,
+              lastSeen: now,
+              location: villager.location,
+              nameTag: villager.nameTag || "Unnamed",
+            });
+
+            const distance = calculateDistance(villager.location, player.location);
+            
+            notifyNearbyPlayers(
+              `§a[Sandbox] NEW villager detected: ${villager.nameTag || "Unnamed"} (${Math.round(distance)}m)`,
+              villager.location
+            );
 
             console.warn(
-              `§a[Sandbox] Villager ${villagerID} marked ACTIVE (distance: ${Math.round(nearestPlayerDistance)}m)`,
+              `§a[Sandbox] NEW villager detected: ${villagerID} at ${Math.round(distance)}m`
+            );
+          } else {
+            // Update metadata for existing villager
+            const metadata = detectedVillagers.get(villagerID);
+            metadata.lastSeen = now;
+            metadata.location = villager.location;
+          }
+
+          // ACTIVATION
+          if (!currentVillagerIDs.has(villagerID)) {
+            metrics.activations++;
+            currentVillagerIDs.add(villagerID);
+
+            const distance = calculateDistance(villager.location, player.location);
+
+            notifyNearbyPlayers(
+              `§a[Sandbox] Villager ACTIVE: ${villager.nameTag || "Unnamed"} (${Math.round(distance)}m)`,
+              villager.location
+            );
+
+            console.warn(
+              `§a[Sandbox] Villager ${villagerID} marked ACTIVE (distance: ${Math.round(distance)}m)`
             );
           }
         }
@@ -261,7 +302,7 @@ function startProximityDetection() {
       }
 
       if (villagersToDeactivate.length > 0) {
-        totalDeactivations += villagersToDeactivate.length;
+        metrics.deactivations += villagersToDeactivate.length;
 
         for (const inactiveID of villagersToDeactivate) {
           currentVillagerIDs.delete(inactiveID);
@@ -269,29 +310,31 @@ function startProximityDetection() {
           const metadata = detectedVillagers.get(inactiveID);
           const villagerName = metadata ? metadata.nameTag : inactiveID;
 
-          for (const player of allPlayers) {
-            player.sendMessage(
-              `§c[Sandbox] Villager INACTIVE: ${villagerName} (beyond ${PROXIMITY_CHECK_RADIUS}m)`,
+          if (metadata) {
+            notifyNearbyPlayers(
+              `§c[Sandbox] Villager INACTIVE: ${villagerName} (beyond ${CONFIG.proximityRadius}m)`,
+              metadata.location
             );
           }
 
           console.warn(
-            `§c[Sandbox] Villager ${inactiveID} marked INACTIVE (beyond ${PROXIMITY_CHECK_RADIUS}m)`,
+            `§c[Sandbox] Villager ${inactiveID} marked INACTIVE (beyond ${CONFIG.proximityRadius}m)`
           );
         }
       }
     } catch (error) {
       console.error(`§c[Sandbox] Proximity check error: ${error.message}`);
     }
-  }, PROXIMITY_CHECK_INTERVAL);
+  }, CONFIG.proximityInterval);
 
   console.warn(
-    `§a[Sandbox] Proximity detection started (every ${PROXIMITY_CHECK_INTERVAL} ticks, radius: ${PROXIMITY_CHECK_RADIUS} blocks)`,
+    `§a[Sandbox] Proximity detection started (every ${CONFIG.proximityInterval} ticks, radius: ${CONFIG.proximityRadius} blocks)`
   );
 }
 
 /**
- * Particle visualization: Shows particles above villagers in currentVillagerIDs.
+ * Particle visualization: Shows particles above active villagers.
+ * Runs at reduced frequency (5 ticks) for better performance.
  */
 function startParticleVisualization() {
   if (particleVisualizationEnabled) {
@@ -301,7 +344,7 @@ function startParticleVisualization() {
 
   particleVisualizationEnabled = true;
 
-  particleVisualizationHandle = system.runInterval(() => {
+  handles.particleVisualization = system.runInterval(() => {
     try {
       const dimension = world.getDimension("overworld");
 
@@ -329,10 +372,10 @@ function startParticleVisualization() {
     } catch (error) {
       console.error(`§c[Sandbox] Particle error: ${error.message}`);
     }
-  }, 1);
+  }, CONFIG.particleInterval);
 
   world.sendMessage(
-    "§a[Sandbox] Particle visualization ENABLED (purple particles above active villagers)",
+    "§a[Sandbox] Particle visualization ENABLED (purple particles above active villagers)"
   );
   console.warn("§a[Sandbox] Particle visualization enabled");
 }
@@ -346,9 +389,9 @@ function stopParticleVisualization() {
     return;
   }
 
-  if (particleVisualizationHandle !== null) {
-    system.clearRun(particleVisualizationHandle);
-    particleVisualizationHandle = null;
+  if (handles.particleVisualization !== null) {
+    system.clearRun(handles.particleVisualization);
+    handles.particleVisualization = null;
   }
 
   particleVisualizationEnabled = false;
@@ -357,226 +400,250 @@ function stopParticleVisualization() {
   console.warn("§c[Sandbox] Particle visualization disabled");
 }
 
+// ========================================
+// DEBUG MODALS
+// ========================================
+
 /**
  * Shows debug modal with state inspection.
+ * @param {Player} player - The player to show the modal to
+ * @returns {Promise<void>}
  */
 async function showDebugModal(player) {
-  const dimension = world.getDimension("overworld");
-  const actualVisibleVillagers = dimension.getEntities({
-    type: "minecraft:villager_v2",
-  });
+  try {
+    const dimension = world.getDimension("overworld");
+    const actualVisibleVillagers = dimension.getEntities({
+      type: "minecraft:villager_v2",
+    });
 
-  // Filter by proximity radius to match currentVillagerIDs logic
-  const allPlayers = world.getAllPlayers();
-  const actualVisibleWithinRadius = actualVisibleVillagers.filter(
-    (villager) => {
+    // Filter by proximity radius to match currentVillagerIDs logic
+    const allPlayers = world.getAllPlayers();
+    const actualVisibleWithinRadius = actualVisibleVillagers.filter((villager) => {
       if (!villager || !villager.isValid) return false;
+      
+      const nearestDistance = getNearestPlayerDistance(villager.location, allPlayers);
+      return nearestDistance <= CONFIG.proximityRadius;
+    });
 
-      let nearestPlayerDistance = Infinity;
-      for (const p of allPlayers) {
-        const dx = p.location.x - villager.location.x;
-        const dy = p.location.y - villager.location.y;
-        const dz = p.location.z - villager.location.z;
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance < nearestPlayerDistance) {
-          nearestPlayerDistance = distance;
-        }
-      }
+    const actualVisibleCount = actualVisibleWithinRadius.length;
 
-      return nearestPlayerDistance <= PROXIMITY_CHECK_RADIUS;
-    },
-  );
+    const form = new ActionFormData();
+    form.title("§lSandbox Debugger");
 
-  const actualVisibleCount = actualVisibleWithinRadius.length;
+    const currentList = Array.from(currentVillagerIDs)
+      .map((id) => {
+        const metadata = detectedVillagers.get(id);
+        return metadata ? metadata.nameTag : id;
+      })
+      .join(", ");
 
-  const form = new ActionFormData();
-  form.title("§lSandbox Debugger");
+    form.body(
+      `§e=== CURRENT (Active) ===\n` +
+        `§aCount: ${currentVillagerIDs.size}\n` +
+        `§7${currentList || "None"}\n\n` +
+        `§e=== DETECTED (All Time) ===\n` +
+        `§aCount: ${detectedVillagers.size}\n\n` +
+        `§e=== ACTUAL VISIBLE ===\n` +
+        `§aCount: ${actualVisibleCount}\n\n` +
+        `§7Select an option below:`
+    );
 
-  const currentList = Array.from(currentVillagerIDs)
-    .map((id) => {
-      const metadata = detectedVillagers.get(id);
-      return metadata ? metadata.nameTag : id;
-    })
-    .join(", ");
+    form.button("View Current (Active)");
+    form.button("View All Detected");
+    form.button("View Specific Villager");
+    form.button("Close");
 
-  form.body(
-    `§e=== CURRENT (Active) ===\n` +
-      `§aCount: ${currentVillagerIDs.size}\n` +
-      `§7${currentList || "None"}\n\n` +
-      `§e=== DETECTED (All Time) ===\n` +
-      `§aCount: ${detectedVillagers.size}\n\n` +
-      `§e=== ACTUAL VISIBLE ===\n` +
-      `§aCount: ${actualVisibleCount}\n\n` +
-      `§7Select an option below:`,
-  );
+    const response = await form.show(player);
 
-  form.button("View Current (Active)");
-  form.button("View All Detected");
-  form.button("View Specific Villager");
-  form.button("Close");
+    if (response.canceled) return;
 
-  const response = await form.show(player);
-
-  if (response.canceled) return;
-
-  if (response.selection === 0) {
-    showCurrentVillagersModal(player);
-  } else if (response.selection === 1) {
-    showAllDetectedModal(player);
-  } else if (response.selection === 2) {
-    showVillagerPickerModal(player);
+    if (response.selection === 0) {
+      showCurrentVillagersModal(player);
+    } else if (response.selection === 1) {
+      showAllDetectedModal(player);
+    } else if (response.selection === 2) {
+      showVillagerPickerModal(player);
+    }
+  } catch (error) {
+    console.error(`§c[Sandbox] Debug modal error: ${error.message}`);
+    player.sendMessage("§cDebug modal failed to load");
   }
 }
 
 /**
  * Shows current active villagers.
+ * @param {Player} player - The player to show the modal to
+ * @returns {Promise<void>}
  */
 async function showCurrentVillagersModal(player) {
-  const form = new ActionFormData();
-  form.title("§lCurrent Active Villagers");
+  try {
+    const form = new ActionFormData();
+    form.title("§lCurrent Active Villagers");
 
-  let bodyText = `§aTotal: ${currentVillagerIDs.size}\n\n`;
+    let bodyText = `§aTotal: ${currentVillagerIDs.size}\n\n`;
 
-  for (const villagerID of currentVillagerIDs) {
-    const metadata = detectedVillagers.get(villagerID);
-    if (metadata) {
-      bodyText += `§e${metadata.nameTag}\n`;
-      bodyText += `§7  Location: X=${Math.round(metadata.location.x)}, Z=${Math.round(metadata.location.z)}\n\n`;
-    } else {
-      bodyText += `§e${villagerID}\n§7  (No metadata)\n\n`;
+    for (const villagerID of currentVillagerIDs) {
+      const metadata = detectedVillagers.get(villagerID);
+      if (metadata) {
+        bodyText += `§e${metadata.nameTag}\n`;
+        bodyText += `§7  Location: X=${Math.round(metadata.location.x)}, Z=${Math.round(metadata.location.z)}\n\n`;
+      } else {
+        bodyText += `§e${villagerID}\n§7  (No metadata)\n\n`;
+      }
     }
-  }
 
-  if (currentVillagerIDs.size === 0) {
-    bodyText = "§cNo villagers currently active";
-  }
+    if (currentVillagerIDs.size === 0) {
+      bodyText = "§cNo villagers currently active";
+    }
 
-  form.body(bodyText);
-  form.button("Back");
+    form.body(bodyText);
+    form.button("Back");
 
-  const response = await form.show(player);
-  if (!response.canceled) {
-    showDebugModal(player);
+    const response = await form.show(player);
+    if (!response.canceled) {
+      showDebugModal(player);
+    }
+  } catch (error) {
+    console.error(`§c[Sandbox] Modal error: ${error.message}`);
+    player.sendMessage("§cModal failed to load");
   }
 }
 
 /**
  * Shows all detected villagers.
+ * @param {Player} player - The player to show the modal to
+ * @returns {Promise<void>}
  */
 async function showAllDetectedModal(player) {
-  const form = new ActionFormData();
-  form.title("§lAll Detected Villagers");
+  try {
+    const form = new ActionFormData();
+    form.title("§lAll Detected Villagers");
 
-  let bodyText = `§aTotal: ${detectedVillagers.size}\n\n`;
+    let bodyText = `§aTotal: ${detectedVillagers.size}\n\n`;
 
-  for (const [villagerID, metadata] of detectedVillagers) {
-    const isActive = currentVillagerIDs.has(villagerID);
-    const statusColor = isActive ? "§a" : "§7";
-    const statusText = isActive ? "ACTIVE" : "INACTIVE";
+    for (const [villagerID, metadata] of detectedVillagers) {
+      const isActive = currentVillagerIDs.has(villagerID);
+      const statusColor = isActive ? "§a" : "§7";
+      const statusText = isActive ? "ACTIVE" : "INACTIVE";
 
-    bodyText += `${statusColor}${metadata.nameTag} [${statusText}]\n`;
-    bodyText += `§7  First seen: ${new Date(metadata.firstSeen).toLocaleTimeString()}\n\n`;
-  }
+      bodyText += `${statusColor}${metadata.nameTag} [${statusText}]\n`;
+      bodyText += `§7  First seen: ${new Date(metadata.firstSeen).toLocaleTimeString()}\n\n`;
+    }
 
-  if (detectedVillagers.size === 0) {
-    bodyText = "§cNo villagers detected yet";
-  }
+    if (detectedVillagers.size === 0) {
+      bodyText = "§cNo villagers detected yet";
+    }
 
-  form.body(bodyText);
-  form.button("Back");
+    form.body(bodyText);
+    form.button("Back");
 
-  const response = await form.show(player);
-  if (!response.canceled) {
-    showDebugModal(player);
+    const response = await form.show(player);
+    if (!response.canceled) {
+      showDebugModal(player);
+    }
+  } catch (error) {
+    console.error(`§c[Sandbox] Modal error: ${error.message}`);
+    player.sendMessage("§cModal failed to load");
   }
 }
 
 /**
  * Villager picker for detailed inspection.
+ * @param {Player} player - The player to show the modal to
+ * @returns {Promise<void>}
  */
 async function showVillagerPickerModal(player) {
-  const form = new ActionFormData();
-  form.title("§lSelect Villager");
+  try {
+    const form = new ActionFormData();
+    form.title("§lSelect Villager");
 
-  if (detectedVillagers.size === 0) {
-    form.body("§cNo villagers detected yet");
-    form.button("Back");
+    if (detectedVillagers.size === 0) {
+      form.body("§cNo villagers detected yet");
+      form.button("Back");
+      const response = await form.show(player);
+      showDebugModal(player);
+      return;
+    }
+
+    form.body("§7Select a villager to view details:");
+
+    const villagerList = Array.from(detectedVillagers.entries());
+    for (const [villagerID, metadata] of villagerList) {
+      const isActive = currentVillagerIDs.has(villagerID);
+      const statusIcon = isActive ? "§a●" : "§7○";
+      form.button(`${statusIcon} ${metadata.nameTag}`);
+    }
+
+    form.button("§cBack");
+
     const response = await form.show(player);
-    showDebugModal(player);
-    return;
+
+    if (response.canceled) {
+      showDebugModal(player);
+      return;
+    }
+
+    if (response.selection === villagerList.length) {
+      showDebugModal(player);
+      return;
+    }
+
+    const selectedVillager = villagerList[response.selection];
+    showVillagerDetailsModal(player, selectedVillager[0], selectedVillager[1]);
+  } catch (error) {
+    console.error(`§c[Sandbox] Modal error: ${error.message}`);
+    player.sendMessage("§cModal failed to load");
   }
-
-  form.body("§7Select a villager to view details:");
-
-  const villagerList = Array.from(detectedVillagers.entries());
-  for (const [villagerID, metadata] of villagerList) {
-    const isActive = currentVillagerIDs.has(villagerID);
-    const statusIcon = isActive ? "§a●" : "§7○";
-    form.button(`${statusIcon} ${metadata.nameTag}`);
-  }
-
-  form.button("§cBack");
-
-  const response = await form.show(player);
-
-  if (response.canceled) {
-    showDebugModal(player);
-    return;
-  }
-
-  if (response.selection === villagerList.length) {
-    showDebugModal(player);
-    return;
-  }
-
-  const selectedVillager = villagerList[response.selection];
-  showVillagerDetailsModal(player, selectedVillager[0], selectedVillager[1]);
 }
 
 /**
  * Shows detailed villager info.
+ * @param {Player} player - The player to show the modal to
+ * @param {string} villagerID - Villager entity ID
+ * @param {Object} metadata - Villager metadata object
+ * @returns {Promise<void>}
  */
 async function showVillagerDetailsModal(player, villagerID, metadata) {
-  const form = new ActionFormData();
-  form.title(`§l${metadata.nameTag}`);
+  try {
+    const form = new ActionFormData();
+    form.title(`§l${metadata.nameTag}`);
 
-  const isActive = currentVillagerIDs.has(villagerID);
-  const statusColor = isActive ? "§a" : "§c";
-  const statusText = isActive ? "ACTIVE" : "INACTIVE";
+    const isActive = currentVillagerIDs.has(villagerID);
+    const statusColor = isActive ? "§a" : "§c";
+    const statusText = isActive ? "ACTIVE" : "INACTIVE";
 
-  // Calculate current distance
-  const allPlayers = world.getAllPlayers();
-  let currentDistance = "Unknown";
-  if (allPlayers.length > 0) {
-    let nearestDist = Infinity;
-    for (const p of allPlayers) {
-      const dx = p.location.x - metadata.location.x;
-      const dz = p.location.z - metadata.location.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < nearestDist) nearestDist = dist;
+    // Calculate current distance
+    const allPlayers = world.getAllPlayers();
+    const nearestDistance = getNearestPlayerDistance(metadata.location, allPlayers);
+    const currentDistance = nearestDistance !== Infinity ? `${Math.round(nearestDistance)}m` : "Unknown";
+
+    const bodyText =
+      `${statusColor}Status: ${statusText}\n\n` +
+      `§7First Seen: ${new Date(metadata.firstSeen).toLocaleTimeString()}\n` +
+      `§7Last Seen: ${new Date(metadata.lastSeen).toLocaleTimeString()}\n\n` +
+      `§eDistance to nearest player: ${currentDistance}\n` +
+      `§eProximity radius: ${CONFIG.proximityRadius}m\n\n` +
+      `§7Location:\n` +
+      `§7  X=${Math.round(metadata.location.x)}\n` +
+      `§7  Y=${Math.round(metadata.location.y)}\n` +
+      `§7  Z=${Math.round(metadata.location.z)}`;
+
+    form.body(bodyText);
+    form.button("Back");
+
+    const response = await form.show(player);
+    if (!response.canceled) {
+      showVillagerPickerModal(player);
     }
-    currentDistance = `${Math.round(nearestDist)}m`;
-  }
-
-  const bodyText =
-    `${statusColor}Status: ${statusText}\n\n` +
-    `§7First Seen: ${new Date(metadata.firstSeen).toLocaleTimeString()}\n` +
-    `§7Last Seen: ${new Date(metadata.lastSeen).toLocaleTimeString()}\n\n` +
-    `§eDistance to nearest player: ${currentDistance}\n` +
-    `§eProximity radius: ${PROXIMITY_CHECK_RADIUS}m\n\n` +
-    `§7Location:\n` +
-    `§7  X=${Math.round(metadata.location.x)}\n` +
-    `§7  Y=${Math.round(metadata.location.y)}\n` +
-    `§7  Z=${Math.round(metadata.location.z)}`;
-
-  form.body(bodyText);
-  form.button("Back");
-
-  const response = await form.show(player);
-  if (!response.canceled) {
-    showVillagerPickerModal(player);
+  } catch (error) {
+    console.error(`§c[Sandbox] Modal error: ${error.message}`);
+    player.sendMessage("§cModal failed to load");
   }
 }
+
+// ========================================
+// COMMANDS
+// ========================================
 
 /**
  * Status command - shows detection statistics.
@@ -589,34 +656,22 @@ function showStatus() {
 
   // Filter by proximity radius to match currentVillagerIDs logic
   const allPlayers = world.getAllPlayers();
-  const actualVisibleWithinRadius = actualVisibleVillagers.filter(
-    (villager) => {
-      if (!villager || !villager.isValid) return false;
-
-      let nearestPlayerDistance = Infinity;
-      for (const p of allPlayers) {
-        const dx = p.location.x - villager.location.x;
-        const dy = p.location.y - villager.location.y;
-        const dz = p.location.z - villager.location.z;
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance < nearestPlayerDistance) {
-          nearestPlayerDistance = distance;
-        }
-      }
-
-      return nearestPlayerDistance <= PROXIMITY_CHECK_RADIUS;
-    },
-  );
+  const actualVisibleWithinRadius = actualVisibleVillagers.filter((villager) => {
+    if (!villager || !villager.isValid) return false;
+    
+    const nearestDistance = getNearestPlayerDistance(villager.location, allPlayers);
+    return nearestDistance <= CONFIG.proximityRadius;
+  });
 
   const actualVisibleCount = actualVisibleWithinRadius.length;
 
   for (const player of allPlayers) {
     player.sendMessage("§b========== SANDBOX STATUS ==========");
-    player.sendMessage(`§6 Proximity checks run: ${totalProximityChecks}`);
-    player.sendMessage(`§a New villagers detected: ${totalNewDetections}`);
-    player.sendMessage(`§a Activations: ${totalActivations}`);
-    player.sendMessage(`§c Deactivations: ${totalDeactivations}`);
-    player.sendMessage(`§4 Deaths: ${totalDeaths}`);
+    player.sendMessage(`§6 Proximity checks run: ${metrics.proximityChecks}`);
+    player.sendMessage(`§a New villagers detected: ${metrics.newDetections}`);
+    player.sendMessage(`§a Activations: ${metrics.activations}`);
+    player.sendMessage(`§c Deactivations: ${metrics.deactivations}`);
+    player.sendMessage(`§4 Deaths: ${metrics.deaths}`);
     player.sendMessage("§b====================================");
     player.sendMessage(`§e Total detected: ${detectedVillagers.size}`);
     player.sendMessage(`§a Currently active: ${currentVillagerIDs.size}`);
@@ -630,11 +685,11 @@ function showStatus() {
   }
 
   console.warn("§b[Sandbox] ========== STATUS ==========");
-  console.warn(`§6 Proximity checks: ${totalProximityChecks}`);
-  console.warn(`§a New detections: ${totalNewDetections}`);
-  console.warn(`§a Activations: ${totalActivations}`);
-  console.warn(`§c Deactivations: ${totalDeactivations}`);
-  console.warn(`§4 Deaths: ${totalDeaths}`);
+  console.warn(`§6 Proximity checks: ${metrics.proximityChecks}`);
+  console.warn(`§a New detections: ${metrics.newDetections}`);
+  console.warn(`§a Activations: ${metrics.activations}`);
+  console.warn(`§c Deactivations: ${metrics.deactivations}`);
+  console.warn(`§4 Deaths: ${metrics.deaths}`);
   console.warn(`§e Total detected: ${detectedVillagers.size}`);
   console.warn(`§a Currently active: ${currentVillagerIDs.size}`);
   console.warn(`§7 Actual visible: ${actualVisibleCount}`);
@@ -649,7 +704,7 @@ function showStatus() {
     const isActive = currentVillagerIDs.has(villagerID);
     const statusIcon = isActive ? "§a●" : "§7○";
     console.warn(
-      `${statusIcon} ${metadata.nameTag}: ${isActive ? "ACTIVE" : "INACTIVE"}`,
+      `${statusIcon} ${metadata.nameTag}: ${isActive ? "ACTIVE" : "INACTIVE"}`
     );
   }
 
@@ -662,20 +717,21 @@ function showStatus() {
 function resetTest() {
   detectedVillagers.clear();
   currentVillagerIDs.clear();
-  totalProximityChecks = 0;
-  totalNewDetections = 0;
-  totalActivations = 0;
-  totalDeactivations = 0;
-  totalDeaths = 0;
+  
+  metrics.proximityChecks = 0;
+  metrics.newDetections = 0;
+  metrics.activations = 0;
+  metrics.deactivations = 0;
+  metrics.deaths = 0;
 
-  if (proximityCheckHandle !== null) {
-    system.clearRun(proximityCheckHandle);
-    proximityCheckHandle = null;
+  if (handles.proximityCheck !== null) {
+    system.clearRun(handles.proximityCheck);
+    handles.proximityCheck = null;
   }
 
-  if (particleVisualizationHandle !== null) {
-    system.clearRun(particleVisualizationHandle);
-    particleVisualizationHandle = null;
+  if (handles.particleVisualization !== null) {
+    system.clearRun(handles.particleVisualization);
+    handles.particleVisualization = null;
     particleVisualizationEnabled = false;
   }
 
@@ -683,8 +739,30 @@ function resetTest() {
   console.warn("§c[Sandbox] Test data reset");
 }
 
+// ========================================
+// COMMAND REGISTRY (CONSOLIDATED EVENTS)
+// ========================================
+
 /**
- * Initialize sandbox commands.
+ * Command registry mapping event IDs to handler functions.
+ * Single event subscription pattern - more efficient than multiple subscriptions.
+ */
+const COMMAND_HANDLERS = {
+  "sandbox:start": () => {
+    world.sendMessage("§b[Sandbox] Starting proximity detection test...");
+    startProximityDetection();
+  },
+  "sandbox:status": showStatus,
+  "sandbox:debug": (event) => {
+    if (event.sourceEntity) showDebugModal(event.sourceEntity);
+  },
+  "sandbox:particles_on": startParticleVisualization,
+  "sandbox:particles_off": stopParticleVisualization,
+  "sandbox:reset": resetTest,
+};
+
+/**
+ * Initialize sandbox commands and event handlers.
  */
 function initializeProximitySandbox() {
   // Always enable death detection (runs automatically)
@@ -693,46 +771,15 @@ function initializeProximitySandbox() {
   // Always enable player leave detection (runs automatically)
   startPlayerLeaveDetection();
   
-  // Start test
+  // Single event subscription with command routing
   system.afterEvents.scriptEventReceive.subscribe((event) => {
-    if (event.id === "sandbox:start") {
-      world.sendMessage("§b[Sandbox] Starting proximity detection test...");
-      startProximityDetection();
-    }
-  });
-
-  // Status
-  system.afterEvents.scriptEventReceive.subscribe((event) => {
-    if (event.id === "sandbox:status") {
-      showStatus();
-    }
-  });
-
-  // Debug modal
-  system.afterEvents.scriptEventReceive.subscribe((event) => {
-    if (event.id === "sandbox:debug") {
-      if (!event.sourceEntity) return;
-      showDebugModal(event.sourceEntity);
-    }
-  });
-
-  // Particles
-  system.afterEvents.scriptEventReceive.subscribe((event) => {
-    if (event.id === "sandbox:particles_on") {
-      startParticleVisualization();
-    }
-  });
-
-  system.afterEvents.scriptEventReceive.subscribe((event) => {
-    if (event.id === "sandbox:particles_off") {
-      stopParticleVisualization();
-    }
-  });
-
-  // Reset
-  system.afterEvents.scriptEventReceive.subscribe((event) => {
-    if (event.id === "sandbox:reset") {
-      resetTest();
+    const handler = COMMAND_HANDLERS[event.id];
+    if (handler) {
+      try {
+        handler(event);
+      } catch (error) {
+        console.error(`§c[Sandbox] Command error (${event.id}): ${error.message}`);
+      }
     }
   });
 
