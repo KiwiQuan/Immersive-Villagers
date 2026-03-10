@@ -146,7 +146,7 @@ function validatePropertyValue(propertyName, value) {
   const expectedType = getPropertyType(propertyName);
   
   if (!expectedType) return false;
-  if (value === null || value === undefined) return true; // Allow null/undefined
+  if (value === null || value === undefined) return true;
   
   const actualType = typeof value;
   return actualType === expectedType;

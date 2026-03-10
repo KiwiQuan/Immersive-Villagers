@@ -1,16 +1,24 @@
+/**
+ * Working Memory Sync Loop
+ * Debounced synchronization of DynamicProperties → PostgreSQL.
+ * Runs every 20 ticks (1 second) for active villagers only.
+ *
+ * @module working_memory_sync
+ */
+
 import { world, system } from "@minecraft/server";
 import {
   hasWorkingMemory,
   getWorkingMemory,
-} from "../utils/dynamic_properties_helpers.js";
-import { postRequestAsync } from "../utils/network_helpers.js";
-import { debugLog } from "../utils/debug_mode_helper.js";
+} from "./working_memory_helpers.js";
+import { postRequestAsync } from "../../utils/network_helpers.js";
+import { debugLog } from "../../utils/debug_mode_helper.js";
 
 const SYNC_INTERVAL_TICKS = 20;
 const BACKEND_SYNC_ENDPOINT = "/api/memory/sync";
 
 /**
- * Debounced sync loop: Syncs Working Memory to PostgreSQL every 100 ticks (5 seconds).
+ * Debounced sync loop: Syncs Working Memory to PostgreSQL.
  * Only syncs villagers with wm_needsSync flag set to true.
  * Runs asynchronously to avoid blocking game thread.
  */
@@ -95,13 +103,4 @@ function startWorkingMemorySyncLoop() {
   );
 }
 
-/**
- * Initializes Layer 4 (Working Memory) systems.
- * Starts the debounced sync loop for Working Memory persistence.
- */
-function initializeLayer4() {
-  startWorkingMemorySyncLoop();
-  console.warn("§a[Layer 4] Working Memory layer initialized");
-}
-
-export { initializeLayer4, startWorkingMemorySyncLoop };
+export { startWorkingMemorySyncLoop };

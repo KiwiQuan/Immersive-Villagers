@@ -3,7 +3,7 @@ import { runAllTests, initializeDebugCommands } from "./test_http.js";
 import { initializeLLMCommands } from "./test_llamacpp.js";
 import { initializeDynamicPropertiesCommands } from "./test_dynamic_properties.js";
 // import { initializeVillagerLifecycle } from "./systems/villager_lifecycle.js";
-import { initializeLayer4 } from "./layers/layer4_working_memory.js";
+import { initializeLayer4System } from "./layers/layer4_working_memory/layer4_init.js";
 // import { initializeSandboxCommands } from "./sandbox/test_entity_load_detection.js";
 import { initializeProximitySandbox } from "./sandbox/test_proximity_detection.js";
 
@@ -23,7 +23,7 @@ system.runTimeout(() => {
   // initializeVillagerLifecycle();
 
   console.warn("§b[AI Brain] Initializing Layer 4 (Working Memory)...");
-  initializeLayer4();
+  initializeLayer4System();
 
   // console.warn("§b[AI Brain] Running initial HTTP communication tests...");
   // runAllTests().catch((error) => {

@@ -1,4 +1,9 @@
-import { http, HttpRequest, HttpHeader, HttpRequestMethod } from "@minecraft/server-net";
+import {
+  http,
+  HttpRequest,
+  HttpHeader,
+  HttpRequestMethod,
+} from "@minecraft/server-net";
 import { debugLog } from "./debug_mode_helper.js";
 
 const BACKEND_URL = "http://localhost:3000";
@@ -66,12 +71,21 @@ async function postRequest(endpoint, data, timeout = DEFAULT_TIMEOUT) {
  * @returns {Promise<Object>} Parsed response body
  * @throws {Error} If all retry attempts fail
  */
-async function getRequest(endpoint, timeout = DEFAULT_TIMEOUT, maxRetries = MAX_RETRY_ATTEMPTS) {
+async function getRequest(
+  endpoint,
+  timeout = DEFAULT_TIMEOUT,
+  maxRetries = MAX_RETRY_ATTEMPTS,
+) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      debugLog("Network", "GET request attempt", { endpoint, attempt, maxRetries, timeout });
+      debugLog("Network", "GET request attempt", {
+        endpoint,
+        attempt,
+        maxRetries,
+        timeout,
+      });
 
       const req = new HttpRequest(`${BACKEND_URL}${endpoint}`);
       req.method = HttpRequestMethod.Get;
@@ -95,7 +109,7 @@ async function getRequest(endpoint, timeout = DEFAULT_TIMEOUT, maxRetries = MAX_
       return JSON.parse(response.body);
     } catch (error) {
       lastError = error;
-      
+
       debugLog("Network", "GET request failed", {
         endpoint,
         attempt,
@@ -104,13 +118,17 @@ async function getRequest(endpoint, timeout = DEFAULT_TIMEOUT, maxRetries = MAX_
       });
 
       if (attempt < maxRetries) {
-        console.warn(`§e[Network] GET ${endpoint} failed (attempt ${attempt}/${maxRetries}), retrying in ${RETRY_DELAY_MS}ms...`);
+        console.warn(
+          `§e[Network] GET ${endpoint} failed (attempt ${attempt}/${maxRetries}), retrying in ${RETRY_DELAY_MS}ms...`,
+        );
         await sleep(RETRY_DELAY_MS);
       }
     }
   }
 
-  throw new Error(`GET ${endpoint} failed after ${maxRetries} attempts: ${lastError.message || lastError}`);
+  throw new Error(
+    `GET ${endpoint} failed after ${maxRetries} attempts: ${lastError.message || lastError}`,
+  );
 }
 
 /**
@@ -139,7 +157,7 @@ async function isBackendOnline() {
     const req = new HttpRequest(`${BACKEND_URL}/`);
     req.method = HttpRequestMethod.Get;
     req.timeout = 2;
-    
+
     const response = await http.request(req);
     return response.status === 200;
   } catch (error) {
