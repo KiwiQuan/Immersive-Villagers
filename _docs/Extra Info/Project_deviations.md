@@ -354,4 +354,141 @@ const PROXIMITY_CHECK_INTERVAL = 20; // ticks (1 second)
 - `20 ticks` = Balance between responsiveness and performance
 - Can be adjusted in production based on server load
 
+### API-Native Approach (Final Implementation)
+
+After discovering `location` + `maxDistance` parameters work together in `EntityQueryOptions`, we refactored to use **player-centric API-native filtering**:
+
+```javascript
+// For each player, let the C++ engine filter villagers
+for (const player of allPlayers) {
+  const nearbyVillagers = dimension.getEntities({
+    type: "minecraft:villager_v2",
+    location: player.location,
+    maxDistance: 150,
+  });
+  // Returns ALL villagers within 150 blocks of THIS player
+  // Zero manual distance calculations needed!
+}
+```
+
+**Performance Impact:**
+
+- Manual approach: O(n × m) = 1,000 distance calculations/sec (100 villagers × 10 players)
+- API-native approach: O(m) = 10 API calls/sec, **zero manual calculations**
+- **~10x performance improvement**
+
+---
+
+## 7. Script Architecture: Layer-First Organization
+
+**Decision:** Use **layer-first folder structure** for the 7-Layer Brain Architecture.
+
+### Rationale
+
+The flat structure (`utils/`, `layers/`) doesn't scale beyond 3-4 layers. As we add Layer 3 (Episodes), Layer 5 (Semantic), and Construction systems, we need clear boundaries to prevent coupling and maintain the Single Responsibility Principle.
+
+### Production Folder Structure
+
+```
+scripts/
+├── systems/
+│   └── villager_lifecycle.js (150-250 lines)
+│       └── COORDINATOR: Detection + orchestration
+│       └── DOES NOT contain layer-specific logic
+│
+├── layers/
+│   ├── layer4_working_memory/
+│   │   ├── working_memory_sync.js (sync loop)
+│   │   ├── working_memory_helpers.js (DP operations)
+│   │   ├── working_memory_schema.js (schema definition)
+│   │   └── layer4_init.js (entry point - called by lifecycle)
+│   │
+│   ├── layer3_episodic/ (future)
+│   │   ├── episode_recorder.js
+│   │   ├── episode_sync.js
+│   │   └── layer3_init.js
+│   │
+│   └── layer5_semantic/ (future)
+│       └── ...
+│
+├── utils/ (truly generic - no layer-specific code)
+│   ├── geometry_helpers.js (distance calculations)
+│   ├── notification_helpers.js (player messaging)
+│   └── debug_mode_helper.js (debug utilities)
+│
+├── config/
+│   └── (global config only)
+│
+├── debug/
+│   └── villager_debugger.js (modals, particles, status)
+│
+└── sandbox/
+    └── (temporary test scripts)
+```
+
+### Key Principles
+
+1. **`villager_lifecycle.js` is a coordinator:**
+   - Handles villager detection (proximity, death, player leave)
+   - Calls layer initialization functions
+   - Does NOT contain layer-specific sync logic
+   - Stays under 300 lines forever
+
+2. **Each layer is self-contained:**
+   - All layer logic in its own folder
+   - Exports single `layerX_init.js` entry point
+   - Lifecycle imports and calls init functions
+   - No cross-layer dependencies (layers don't import each other)
+
+3. **`utils/` is truly generic:**
+   - Pure functions with no layer coupling
+   - Reusable across ALL layers and systems
+   - No business logic or state management
+
+4. **File size enforcement:**
+   - No file exceeds 500 lines
+   - Break into sub-modules if needed (e.g., `working_memory_helpers.js` → `working_memory_getters.js` + `working_memory_setters.js`)
+
+### Example: villager_lifecycle.js (Coordinator Pattern)
+
+```javascript
+import { initializeLayer4 } from "../layers/layer4_working_memory/layer4_init.js";
+// Future:
+// import { initializeLayer3 } from "../layers/layer3_episodic/layer3_init.js";
+
+/**
+ * Handles new villager registration and layer initialization.
+ * @param {Entity} villager - Villager entity
+ */
+function handleNewVillager(villager) {
+  const villagerID = villager.id;
+
+  // 1. Register in database (system concern)
+  registerVillager({
+    villagerID,
+    name: villager.nameTag || "Unnamed",
+    home_x: villager.location.x,
+    home_y: villager.location.y,
+    home_z: villager.location.z,
+    isActive: true,
+  }).then(() => {
+    // 2. Delegate to layers (each layer handles its own init)
+    initializeLayer4(villager);
+    // initializeLayer3(villager); // future
+
+    // Lifecycle stays thin - just orchestration!
+  });
+}
+```
+
+### Benefits
+
+| Aspect                   | Flat Structure             | Layer-First              |
+| ------------------------ | -------------------------- | ------------------------ |
+| **Scalability**          | Hard (utils bloat)         | Easy (add layer folders) |
+| **Maintainability**      | Medium (unclear ownership) | High (clear boundaries)  |
+| **File Size**            | Tends to grow              | Enforced under 500 lines |
+| **Coupling**             | High risk                  | Low (explicit imports)   |
+| **Matches Architecture** | No                         | Yes (7-Layer Brain)      |
+
 ---
