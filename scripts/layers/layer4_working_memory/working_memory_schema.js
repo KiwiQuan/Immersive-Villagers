@@ -33,28 +33,28 @@ const WORKING_MEMORY_SCHEMA = {
    */
   wm_currentMood_C: {
     type: "number",
-    defaultValue: 0.5,
+    defaultValue: 0.0,
     description: "Constructiveness axis (-1 to 1): Building (+) vs Destroying (-)",
   },
   wm_currentMood_V: {
     type: "number",
-    defaultValue: 0.5,
-    description: "Value axis (0 to 1): Economic/Survival importance",
+    defaultValue: 0.0,
+    description: "Value axis (-1 to 1): Economic/Survival importance",
   },
   wm_currentMood_I: {
     type: "number",
-    defaultValue: 0.5,
-    description: "Intensity axis (0 to 1): Energy/Arousal level",
+    defaultValue: 0.0,
+    description: "Intensity axis (-1 to 1): Energy/Arousal level",
   },
   wm_currentMood_S: {
     type: "number",
-    defaultValue: 0.5,
+    defaultValue: 0.0,
     description: "Sociality axis (-1 to 1): Friendly (+) vs Hostile (-)",
   },
   wm_currentMood_X: {
     type: "number",
-    defaultValue: 0.5,
-    description: "Complexity axis (0 to 1): Systemic (+) vs Random (-)",
+    defaultValue: 0.0,
+    description: "Complexity axis (-1 to 1): Systemic (+) vs Random (-)",
   },
 
   /**

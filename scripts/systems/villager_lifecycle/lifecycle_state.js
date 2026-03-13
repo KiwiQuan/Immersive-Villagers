@@ -1,0 +1,145 @@
+/**
+ * Villager Lifecycle - Canonical State
+ *
+ * SINGLE SOURCE OF TRUTH for villager state.
+ * All layers consume this state instead of querying independently.
+ *
+ * @module lifecycle_state
+ */
+
+// ========================================
+// CONFIGURATION
+// ========================================
+
+export const LIFECYCLE_CONFIG = {
+  proximityRadius: 150, // blocks
+  proximityInterval: 20, // ticks (1 second)
+  notificationRadius: 200, // blocks (only notify nearby players)
+};
+
+// ========================================
+// CANONICAL STATE
+// ========================================
+
+/**
+ * Map of currently active villagers (within proximity of any player).
+ * This is the SINGLE SOURCE OF TRUTH for active villagers.
+ * 
+ * "Fetch Once, Consume Everywhere" Pattern:
+ * - Coordinator queries entities ONCE per tick
+ * - Caches live entity references in this Map
+ * - Layers iterate Map.values() or Map.entries() (zero queries needed!)
+ * - O(1) lookups by ID (vs O(n) for array)
+ * - Entities are valid for 1-2 ticks (fresh enough for sync)
+ * 
+ * @type {Map<string, Entity>} Map of villagerID → Entity reference
+ * 
+ * @example
+ * // Iterate with both ID and entity:
+ * for (const [villagerID, villager] of activeVillagers) {
+ *   if (!villager.isValid) continue;
+ *   // Process villager
+ * }
+ * 
+ * // Check if villager is active:
+ * if (activeVillagers.has(villagerID)) { ... }
+ * 
+ * // Get specific villager entity:
+ * const villager = activeVillagers.get(villagerID);
+ */
+export const activeVillagers = new Map();
+
+/**
+ * Updates the active villagers Map with a fresh batch from proximity detection.
+ * Clears old/dead references and replaces with new Map.
+ * 
+ * @param {Map<string, Entity>} newMap - Fresh Map of active villagers from this tick
+ */
+export function updateActiveVillagers(newMap) {
+  activeVillagers.clear();
+  for (const [id, entity] of newMap) {
+    activeVillagers.set(id, entity);
+  }
+}
+
+/**
+ * Map of all tracked villagers with metadata.
+ * Persists across active/inactive transitions.
+ * @type {Map<string, Object>}
+ *
+ * Metadata structure:
+ * {
+ *   firstSeen: number,     // Unix timestamp
+ *   lastSeen: number,      // Unix timestamp
+ *   location: Object,      // {x, y, z}
+ *   nameTag: string        // Villager name
+ * }
+ */
+export const trackedVillagers = new Map();
+
+/**
+ * System.runInterval handle for proximity detection loop.
+ * Used to stop/restart the system.
+ * @type {number|null}
+ */
+export let lifecycleHandle = null;
+
+/**
+ * Sets the lifecycle handle (called by coordinator).
+ * @param {number|null} handle
+ */
+export function setLifecycleHandle(handle) {
+  lifecycleHandle = handle;
+}
+
+// ========================================
+// STATE QUERY FUNCTIONS
+// ========================================
+
+/**
+ * Gets metadata for a tracked villager.
+ *
+ * @param {string} villagerID - Villager entity ID
+ * @returns {Object|null} Metadata object or null if not tracked
+ *
+ * @example
+ * const metadata = getVillagerMetadata(villagerID);
+ * if (metadata) {
+ *   console.log(`Villager: ${metadata.nameTag}`);
+ * }
+ */
+export function getVillagerMetadata(villagerID) {
+  return trackedVillagers.get(villagerID) || null;
+}
+
+/**
+ * Checks if a villager is currently active.
+ * 
+ * @param {string} villagerID - Villager entity ID
+ * @returns {boolean} True if villager is active
+ * 
+ * @example
+ * if (isVillagerActive(villagerID)) {
+ *   console.log("Villager is within proximity range");
+ * }
+ */
+export function isVillagerActive(villagerID) {
+  return activeVillagers.has(villagerID);
+}
+
+/**
+ * Gets an active villager entity by ID.
+ * O(1) lookup via Map.get().
+ * 
+ * @param {string} villagerID - Villager entity ID
+ * @returns {Entity|undefined} Entity reference or undefined if not active
+ * 
+ * @example
+ * const villager = getActiveVillagerEntity(villagerID);
+ * if (villager && villager.isValid) {
+ *   // Process villager
+ * }
+ */
+export function getActiveVillagerEntity(villagerID) {
+  return activeVillagers.get(villagerID);
+}

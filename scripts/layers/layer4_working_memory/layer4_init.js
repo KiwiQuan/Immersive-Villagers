@@ -19,29 +19,24 @@ let syncLoopStarted = false;
 /**
  * Initializes Working Memory for a specific villager.
  * Called by villager_lifecycle.js when a new villager is detected.
+ * Uses atomic backend lazy initialization - ensures villager exists first, then syncs WM.
  * 
  * @param {Entity} villager - The villager entity to initialize
- * @returns {boolean} True if initialization succeeded
+ * @returns {Promise<boolean>} True if initialization succeeded
  * 
  * @example
  * import { initializeLayer4ForVillager } from "../layers/layer4_working_memory/layer4_init.js";
  * 
  * function handleNewVillager(villager) {
- *   await registerVillager(...);
- *   initializeLayer4ForVillager(villager);
+ *   await initializeLayer4ForVillager(villager);
  * }
  */
-function initializeLayer4ForVillager(villager) {
+async function initializeLayer4ForVillager(villager) {
   if (!villager || !villager.isValid) return false;
   
-  if (hasWorkingMemory(villager)) {
-    console.warn(
-      `§e[Layer 4] Villager ${villager.id} already has Working Memory initialized`
-    );
-    return true;
-  }
-  
-  return initializeWorkingMemory(villager);
+  // NOTE: No hasWorkingMemory() check - backend is idempotent
+  // Always initialize to ensure BOTH DPs AND DB exist
+  return await initializeWorkingMemory(villager);
 }
 
 /**

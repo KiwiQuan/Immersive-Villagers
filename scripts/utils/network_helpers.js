@@ -4,6 +4,7 @@ import {
   HttpHeader,
   HttpRequestMethod,
 } from "@minecraft/server-net";
+import { system } from "@minecraft/server";
 import { debugLog } from "./debug_mode_helper.js";
 
 const BACKEND_URL = "http://localhost:3000";
@@ -17,7 +18,9 @@ const RETRY_DELAY_MS = 1000;
  * @returns {Promise<void>}
  */
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    system.runTimeout(() => resolve(), Math.ceil(ms / 50)); // Convert ms to ticks (50ms per tick)
+  });
 }
 
 /**
@@ -165,4 +168,44 @@ async function isBackendOnline() {
   }
 }
 
-export { postRequest, getRequest, postRequestAsync, isBackendOnline };
+/**
+ * Sends HTTP DELETE request with timeout.
+ * @param {string} endpoint - API endpoint path (e.g., "/api/villagers/delete_all")
+ * @param {number} timeout - Timeout in seconds (default: 5)
+ * @returns {Promise<Object>} Parsed response body
+ * @throws {Error} If request fails or times out
+ */
+async function deleteRequest(endpoint, timeout = DEFAULT_TIMEOUT) {
+  try {
+    debugLog("Network", "DELETE request starting", { endpoint, timeout });
+
+    const req = new HttpRequest(`${BACKEND_URL}${endpoint}`);
+    req.method = HttpRequestMethod.Delete;
+    req.headers = [new HttpHeader("Content-Type", "application/json")];
+    req.timeout = timeout;
+
+    const startTime = Date.now();
+    const response = await http.request(req);
+    const duration = Date.now() - startTime;
+
+    debugLog("Network", "DELETE request succeeded", {
+      endpoint,
+      status: response.status,
+      duration,
+    });
+
+    if (response.status >= 400) {
+      throw new Error(`HTTP ${response.status}: ${response.body}`);
+    }
+
+    return JSON.parse(response.body);
+  } catch (error) {
+    debugLog("Network", "DELETE request failed", {
+      endpoint,
+      error: error.message || String(error),
+    });
+    throw new Error(`DELETE ${endpoint} failed: ${error.message || error}`);
+  }
+}
+
+export { postRequest, getRequest, deleteRequest, postRequestAsync, isBackendOnline };

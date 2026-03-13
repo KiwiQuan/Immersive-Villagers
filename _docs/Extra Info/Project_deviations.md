@@ -317,7 +317,7 @@ After extensive sandbox testing (see `scripts/sandbox/test_entity_load_detection
 ```javascript
 // Every 20 ticks (1 second):
 1. Query all villagers via dimension.getEntities()
-2. Calculate distance to nearest player (Euclidean 3D)
+2. Calculate distance to nearest player (using maxDistance + location EntityQueryOptions)
 3. If distance <= 150 blocks → ACTIVE
 4. If distance > 150 blocks → INACTIVE
 5. Detect NEW villagers during scan (not in tracked Map)
@@ -325,7 +325,7 @@ After extensive sandbox testing (see `scripts/sandbox/test_entity_load_detection
 
 **Advantages:**
 
-- ✅ **Pure geometry** - No reliance on engine event quirks
+- ✅ **Pure geometry** - No reliance on event engine event quirks
 - ✅ **Predictable** - Always triggers at exact distance threshold
 - ✅ **Resilient** - Works across all Bedrock versions and chunk behaviors
 - ✅ **Handles death** - Dead villagers naturally drop out of `getEntities()` query
@@ -338,8 +338,12 @@ After extensive sandbox testing (see `scripts/sandbox/test_entity_load_detection
 
 ### Implementation Files
 
-- **Sandbox Test:** `scripts/sandbox/test_proximity_detection.js`
-- **Production:** `scripts/systems/villager_lifecycle.js` (to be refactored with proximity logic)
+- **Sandbox Test (Archived):** `scripts/sandbox/test_proximity_detection.js`
+- **Production:** `scripts/systems/villager_lifecycle/` (modular implementation)
+  - `lifecycle_coordinator.js` - Main detection loop
+  - `lifecycle_state.js` - Shared state & entity caching
+  - `lifecycle_handlers.js` - Event handlers
+  - `lifecycle_db.js` - Database operations
 
 ### Configuration Constants
 
@@ -392,16 +396,26 @@ The flat structure (`utils/`, `layers/`) doesn't scale beyond 3-4 layers. As we 
 ```
 scripts/
 ├── systems/
-│   └── villager_lifecycle.js (150-250 lines)
-│       └── COORDINATOR: Detection + orchestration
-│       └── DOES NOT contain layer-specific logic
+│   ├── villager_lifecycle/
+│   │   ├── lifecycle_coordinator.js  # Main entry point & proximity detection
+│   │   ├── lifecycle_state.js        # Shared state (activeVillagers, trackedVillagers, etc.)
+│   │   ├── lifecycle_handlers.js     # Event handlers (new, activation, deactivation, death)
+│   │   └── lifecycle_db.js           # Database operations (register, activate, remove)
+│   │
+│   └── debug/
+│       ├── debug_modals.js          # Main entry point & modal router
+│       ├── debug_modals/
+│       │   ├── proximity_modal.js   # Proximity detection testing UI
+│       │   └── database_modal.js    # Database CRUD operations UI
+│       ├── debug_particles.js       # Visual particle indicators
+│       └── debug_commands.js        # ScriptEvent command handlers
 │
 ├── layers/
 │   ├── layer4_working_memory/
-│   │   ├── working_memory_sync.js (sync loop)
-│   │   ├── working_memory_helpers.js (DP operations)
-│   │   ├── working_memory_schema.js (schema definition)
-│   │   └── layer4_init.js (entry point - called by lifecycle)
+│   │   ├── working_memory_sync.js   # Sync loop (consumes activeVillagerEntities)
+│   │   ├── working_memory_helpers.js # DP CRUD operations
+│   │   ├── working_memory_schema.js  # Schema definition
+│   │   └── layer4_init.js           # Entry point (called by lifecycle)
 │   │
 │   ├── layer3_episodic/ (future)
 │   │   ├── episode_recorder.js
@@ -412,27 +426,30 @@ scripts/
 │       └── ...
 │
 ├── utils/ (truly generic - no layer-specific code)
-│   ├── geometry_helpers.js (distance calculations)
-│   ├── notification_helpers.js (player messaging)
-│   └── debug_mode_helper.js (debug utilities)
+│   ├── geometry_helpers.js          # Pure distance calculations
+│   ├── notification_helpers.js      # Player messaging utilities
+│   ├── debug_mode_helper.js         # Debug mode utilities
+│   └── network_helpers.js           # HTTP request wrappers
 │
 ├── config/
 │   └── (global config only)
 │
-├── debug/
-│   └── villager_debugger.js (modals, particles, status)
-│
 └── sandbox/
-    └── (temporary test scripts)
+    ├── test_proximity_detection.js  # Proximity detection testing (archived)
+    └── (other temporary test scripts)
 ```
 
 ### Key Principles
 
-1. **`villager_lifecycle.js` is a coordinator:**
-   - Handles villager detection (proximity, death, player leave)
-   - Calls layer initialization functions
+1. **`villager_lifecycle/` is a modular coordinator:**
+   - Split into focused sub-modules by responsibility:
+     - `lifecycle_coordinator.js` - Detection orchestration & main entry point
+     - `lifecycle_state.js` - Shared state management (single source of truth)
+     - `lifecycle_handlers.js` - Event-driven state transitions
+     - `lifecycle_db.js` - Database operations
+   - Each file stays under 250 lines
+   - Calls layer initialization functions (orchestration only)
    - Does NOT contain layer-specific sync logic
-   - Stays under 300 lines forever
 
 2. **Each layer is self-contained:**
    - All layer logic in its own folder
@@ -447,37 +464,44 @@ scripts/
 
 4. **File size enforcement:**
    - No file exceeds 500 lines
-   - Break into sub-modules if needed (e.g., `working_memory_helpers.js` → `working_memory_getters.js` + `working_memory_setters.js`)
+   - Break into sub-modules if needed (e.g., `villager_lifecycle.js` → 4 files)
 
-### Example: villager_lifecycle.js (Coordinator Pattern)
+5. **Debug tools are system-level:**
+   - `systems/debug/` contains proximity testing tools
+   - Consumes production state (not separate sandbox state)
+   - Available via scriptevent commands
+
+### Example: lifecycle_handlers.js (Coordinator Pattern)
 
 ```javascript
-import { initializeLayer4 } from "../layers/layer4_working_memory/layer4_init.js";
+// lifecycle_handlers.js
+import { registerVillagerInDB } from "./lifecycle_db.js";
+import { initializeLayer4ForVillager } from "../../layers/layer4_working_memory/layer4_init.js";
 // Future:
-// import { initializeLayer3 } from "../layers/layer3_episodic/layer3_init.js";
+// import { initializeLayer3ForVillager } from "../../layers/layer3_episodic/layer3_init.js";
 
 /**
  * Handles new villager registration and layer initialization.
  * @param {Entity} villager - Villager entity
  */
-function handleNewVillager(villager) {
+export async function handleNewVillager(villager) {
   const villagerID = villager.id;
 
   // 1. Register in database (system concern)
-  registerVillager({
+  await registerVillagerInDB({
     villagerID,
     name: villager.nameTag || "Unnamed",
     home_x: villager.location.x,
     home_y: villager.location.y,
     home_z: villager.location.z,
     isActive: true,
-  }).then(() => {
-    // 2. Delegate to layers (each layer handles its own init)
-    initializeLayer4(villager);
-    // initializeLayer3(villager); // future
-
-    // Lifecycle stays thin - just orchestration!
   });
+
+  // 2. Delegate to layers (each layer handles its own init)
+  initializeLayer4ForVillager(villager);
+  // initializeLayer3ForVillager(villager); // future
+
+  // Handler stays thin - just orchestration!
 }
 ```
 
@@ -490,5 +514,246 @@ function handleNewVillager(villager) {
 | **File Size**            | Tends to grow              | Enforced under 500 lines |
 | **Coupling**             | High risk                  | Low (explicit imports)   |
 | **Matches Architecture** | No                         | Yes (7-Layer Brain)      |
+
+---
+
+## Performance Optimization: Entity Caching ("Fetch Once, Consume Everywhere")
+
+**Problem**: Multiple systems need access to active villager entities each tick:
+
+- Lifecycle Coordinator (proximity detection)
+- Layer 4 Working Memory (sync loop)
+- Future layers (Layer 3 Episodes, Layer 5 Semantic, etc.)
+
+**Initial Approach (Inefficient)**:
+
+```javascript
+// lifecycle_coordinator.js
+const villagers = dimension.getEntities({ type: "minecraft:villager_v2" }); // Call 1
+
+// working_memory_sync.js
+const villagers = dimension.getEntities({ type: "minecraft:villager_v2" }); // Call 2
+
+// Future: layer3_episode_recorder.js
+const villagers = dimension.getEntities({ type: "minecraft:villager_v2" }); // Call 3
+```
+
+**Why This is Bad**:
+
+1. **Performance Penalty**: `dimension.getEntities()` queries ALL entities in the dimension, then filters by type. With 1,000+ entities in a large world, this becomes expensive.
+2. **DRY Violation**: Every system duplicates the same query logic.
+3. **Scalability Issue**: Each new layer adds another redundant API call.
+4. **Lower-End Hardware**: Mobile devices and shared servers struggle with multiple heavy queries per tick.
+
+**Solution: Centralized Entity Caching**:
+
+The **Lifecycle Coordinator** performs `getEntities()` once per tick and caches live entity references in a shared **Map**:
+
+```javascript
+// lifecycle_state.js (shared state)
+export const activeVillagers = new Map(); // Map<villagerID, Entity>
+
+export function updateActiveVillagers(newMap) {
+  activeVillagers.clear();
+  for (const [id, entity] of newMap) {
+    activeVillagers.set(id, entity);
+  }
+}
+
+// lifecycle_coordinator.js (coordinator)
+system.runInterval(() => {
+  const currentTickMap = new Map();
+
+  for (const player of allPlayers) {
+    const villagers = dimension.getEntities({
+      type: "minecraft:villager_v2",
+      location: player.location,
+      maxDistance: 150,
+    });
+
+    for (const villager of villagers) {
+      if (!villager?.isValid) continue;
+      currentTickMap.set(villager.id, villager);
+
+      // Use GLOBAL activeVillagers to check if this is new activation
+      if (!activeVillagers.has(villager.id)) {
+        handleActivation(villager.id, villager);
+      }
+    }
+  }
+
+  // DEACTIVATION: Compare global vs new map
+  for (const villagerID of activeVillagers.keys()) {
+    if (!currentTickMap.has(villagerID)) {
+      handleDeactivation(villagerID);
+    }
+  }
+
+  // Update canonical state with fresh batch
+  updateActiveVillagers(currentTickMap);
+}, 20);
+
+// working_memory_sync.js (consumer)
+import { activeVillagers } from "../villager_lifecycle/lifecycle_state.js";
+
+system.runInterval(() => {
+  for (const [villagerID, villager] of activeVillagers) {
+    if (!villager?.isValid) continue;
+    // Use cached entities - NO getEntities() call needed!
+    syncWorkingMemory(villager);
+  }
+}, 20);
+```
+
+**Why Map is Better Than Array**:
+
+1. **O(1) Lookups**: `activeVillagers.get(villagerID)` vs `array.find(v => v.id === id)` which is O(n)
+2. **Membership Checks**: `activeVillagers.has(villagerID)` is instant
+3. **No Duplication**: Single source of truth (no separate Set + Array)
+4. **Easy Iteration**: `Map.values()` for entities, `Map.keys()` for IDs
+
+**Why Entity References Are Safe to Cache**:
+
+Entity references remain valid for the duration of a tick. Since our systems run on `system.runInterval(20)`, the cached references are guaranteed valid when consumed because:
+
+1. The cache is refreshed every 20 ticks
+2. Consumers run at the same interval (with staggered offsets)
+3. If an entity becomes invalid mid-tick, `villager.isValid` catches it
+
+**Performance Impact**:
+
+| Scenario                     | Without Cache             | With Cache               | Improvement |
+| ---------------------------- | ------------------------- | ------------------------ | ----------- |
+| **1 player, 100 villagers**  | 3 API calls/tick × 20 tps | 1 API call/tick × 20 tps | **3x**      |
+| **5 players, 500 villagers** | 3 API calls/tick × 20 tps | 1 API call/tick × 20 tps | **3x**      |
+| **Future (7 layers active)** | 7 API calls/tick × 20 tps | 1 API call/tick × 20 tps | **7x**      |
+
+**Best Practice**: Any system that needs to iterate active villagers should consume `activeVillagers.values()` instead of querying directly.
+
+**Related Optimization**: Combined with Staggered Intervals (see below), this pattern ensures both minimal API calls AND distributed CPU load.
+
+---
+
+## Performance Optimization: Staggered Intervals
+
+**Issue**: Multiple heavy systems (Lifecycle Coordinator, Layer 4 Sync) running with the same `system.runInterval` timing could cause CPU load spikes on lower-end hardware when they execute in the same tick.
+
+**Solution**: Implemented staggered startup delays to distribute CPU load across multiple ticks:
+
+```javascript
+// lifecycle_coordinator.js
+system.runInterval(() => {
+  // Proximity detection logic
+}, 20); // Runs immediately on tick 0, 20, 40...
+
+// working_memory_sync.js
+const SYNC_STARTUP_DELAY_TICKS = 10;
+system.runTimeout(() => {
+  system.runInterval(() => {
+    // Sync logic
+  }, 20); // Runs on tick 10, 30, 50...
+}, SYNC_STARTUP_DELAY_TICKS);
+```
+
+**Benefits**:
+
+- Prevents frame spikes on resource-constrained devices
+- Smoother overall performance profile
+- Follows the "optimizing for the low-end user" principle
+
+**Best Practice**: Offset intervals for any system that performs heavy operations (database sync, AI queries, etc.).
+
+---
+
+## Debug Tools: Interactive Testing System
+
+**Purpose**: Comprehensive debug tools for testing proximity detection and database operations.
+
+**Location**: `scripts/systems/debug/`
+
+**Structure**:
+
+```
+scripts/systems/debug/
+├── debug_modals.js                    # Main entry point & router
+├── debug_modals/
+│   ├── proximity_modal.js            # Proximity detection testing
+│   └── database_modal.js             # Database CRUD operations
+├── debug_particles.js                # Visual particle indicators
+└── debug_commands.js                 # ScriptEvent command handlers
+```
+
+**Available Commands**:
+
+- `/scriptevent debug:menu` - Opens main debug menu (hub for all tools)
+- `/scriptevent debug:proximity_status` - Shows detection statistics in chat
+- `/scriptevent debug:proximity_modal` - Opens proximity detection UI
+- `/scriptevent debug:database_modal` - Opens database operations UI
+- `/scriptevent debug:particles_on` - Enables purple particles above active villagers
+- `/scriptevent debug:particles_off` - Disables particle visualization
+
+### Proximity Detection Modal
+
+**Features**:
+
+- Real-time validation against actual visible villagers
+- View active vs inactive villagers
+- Inspect individual villager proximity metrics
+- Status indicators (§a● for active, §7○ for inactive)
+- Mismatch detection to identify tracking errors
+
+**UX**: Clear messaging that tools are for testing proximity capabilities.
+
+### Database Operations Modal
+
+**Features**:
+
+- **Register Villager**: Add tracked villagers to database
+- **Update Status**: Set villager active/inactive status
+- **Remove Villager**: Delete villager from database (with confirmation)
+- **View Villager**: Fetch and display database record
+- **Batch Operations**:
+  - Register all tracked villagers
+  - Set all villagers to active
+  - Set all villagers to inactive
+- **Full Reset**: Complete data wipe (double confirmation required)
+  - Clears all DynamicProperties from villagers
+  - Deletes all database records
+  - Clears tracking maps (trackedVillagers, activeVillagers)
+
+**UX**: Provides direct backend connectivity testing with clear success/failure feedback.
+
+**New Backend Endpoints**:
+
+Added `/api/villagers/get` endpoint for fetching individual villager data:
+
+```javascript
+// nodeDB/queries/villagers.js
+async function getVillager(villagerID) {
+  const result = await client.query(
+    "SELECT * FROM villagers WHERE villager_id = $1",
+    [villagerID],
+  );
+  return result.rows[0] || null;
+}
+
+// nodeDB/routes/villagers.js
+router.post("/get", async (req, res) => {
+  const { villagerID } = req.body;
+  const villager = await getVillager(villagerID);
+  res.json({ status: "success", villager });
+});
+```
+
+**Integration**:
+
+```javascript
+// main.js
+import { initializeDebugCommands as initializeProximityDebugCommands } from "./systems/debug/debug_commands.js";
+
+initializeProximityDebugCommands();
+```
+
+**Note**: These debug tools consume the production `activeVillagers` and `trackedVillagers` state from `lifecycle_state.js`, ensuring they test the actual production system rather than separate sandbox state.
 
 ---
