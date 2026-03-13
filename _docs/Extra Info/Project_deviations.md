@@ -757,3 +757,62 @@ initializeProximityDebugCommands();
 **Note**: These debug tools consume the production `activeVillagers` and `trackedVillagers` state from `lifecycle_state.js`, ensuring they test the actual production system rather than separate sandbox state.
 
 ---
+
+## Batch Queue System
+
+**Purpose**: Reduce network overhead by grouping multiple operations into single HTTP requests.
+
+**Implementation**: Generic, reusable batch queue utility (`scripts/utils/batch_queue.js`) that handles:
+- Automatic deduplication (Set-based)
+- Debounced or fixed-delay timers
+- Parallel batch processing
+- Graceful error handling with fallback to individual requests
+
+**Usage**:
+
+1. **Villager Initialization** (debounced, 10s):
+   - Collects new villagers as chunks load during travel
+   - Timer resets on each detection (waits for all villagers to load)
+   - Processes as single batch: registration → WM initialization → DB sync
+   - **Result**: 10 villagers = 2 HTTP requests (1 registration batch + 1 WM sync batch) vs 20 individual requests
+
+2. **Active State Updates** (fixed, 1s):
+   - Groups activation/deactivation events
+   - Fixed delay for frequent proximity changes
+   - **Result**: Multiple villagers entering/leaving range = 1 batch request vs N individual requests
+
+**Benefits**:
+- Reduces HTTP connection overhead
+- Prevents backend connection pool exhaustion
+- Cleaner console logs (batch summaries vs individual confirmations)
+- Maintains atomicity (all-or-nothing for registration + WM sync)
+
+**Code Example**:
+
+```javascript
+// scripts/systems/villager_lifecycle/lifecycle_handlers.js
+const initQueue = createBatchQueue({
+  name: "Villager Init",
+  delayTicks: 200, // 10 seconds
+  debounced: true, // Reset timer on each new villager
+  getItemId: (villager) => villager.id,
+  processBatch: processInitBatch, // Handles batch registration + WM sync
+  logPrefix: "§b[Lifecycle]",
+});
+
+// Usage
+initQueue.add(villager); // Automatically queued, deduplicated, and batched
+```
+
+**Backend**: Modified endpoints to **always** accept arrays (single items sent as 1-element arrays):
+
+```javascript
+// nodeDB/routes/villagers.js
+router.post("/register", async (req, res) => {
+  // Always expects array: [villager1, villager2, ...]
+  const result = await registerVillager(req.body);
+  res.json(result);
+});
+```
+
+---
