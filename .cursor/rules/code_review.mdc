@@ -4,5 +4,5 @@ alwaysApply: false
 
 do a code review and provide feedback of what should/could be imrpoved
 is it scalable? does it use those senior level coding patterns and principles? (DRY, Separation of concerns, Single responsibility principle, KISS, etc.)
-is the logic over-engineered?
+is the logic over-engineered? is it industry standard?
 don't change anything just analyze and give examples of what could be better.
