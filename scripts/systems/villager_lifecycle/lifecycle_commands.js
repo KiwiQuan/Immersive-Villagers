@@ -21,7 +21,7 @@ import {
   startWorkingMemorySync,
   stopWorkingMemorySync,
 } from "../../layers/layer4_working_memory/working_memory_sync.js";
-import { clearWorkingMemory } from "../../layers/layer4_working_memory/working_memory_helpers.js";
+import { clearWorkingMemory } from "../../layers/layer4_working_memory/helpers/working_memory_helpers.js";
 import { trackedVillagers } from "./lifecycle_state.js";
 import { deleteRequest } from "../../utils/network_helpers.js";
 

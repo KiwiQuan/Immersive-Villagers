@@ -31,7 +31,7 @@ import {
   handleVillagerDeath,
 } from "./lifecycle_handlers.js";
 import { getAllVillagersFromDB } from "./lifecycle_db.js";
-import { setWorkingMemory } from "../../layers/layer4_working_memory/working_memory_helpers.js";
+import { setWorkingMemory } from "../../layers/layer4_working_memory/helpers/working_memory_helpers.js";
 
 // ========================================
 // STATE RECOVERY
@@ -58,8 +58,47 @@ async function autoRecoverState() {
     
     for (const dbVillager of villagers) {
       const villagerID = dbVillager.villager_id;
-      
-      // Restore to trackedVillagers Map
+
+      // Build Working Memory cache from DB (LOCAL MIRROR pattern)
+      let wmCache = null;
+      if (dbVillager.working_memory) {
+        const wm = dbVillager.working_memory;
+        
+        // Parse vector string from PostgreSQL (row_to_json returns vectors as strings)
+        let moodArray = [0.0, 0.0, 0.0, 0.0, 0.0];
+        if (wm.current_mood_manual) {
+          try {
+            // Parse "[0.5, -0.3, 1.0, 0.0, -1.0]" -> [0.5, -0.3, 1.0, 0.0, -1.0]
+            moodArray = typeof wm.current_mood_manual === 'string' 
+              ? JSON.parse(wm.current_mood_manual)
+              : wm.current_mood_manual;
+          } catch (parseError) {
+            console.warn(`§e[Recovery] Failed to parse mood vector for ${villagerID.substring(0, 12)}: ${parseError.message}`);
+          }
+        }
+        
+        wmCache = {
+          currentMood: {
+            C: moodArray[0] ?? 0.0,
+            V: moodArray[1] ?? 0.0,
+            I: moodArray[2] ?? 0.0,
+            S: moodArray[3] ?? 0.0,
+            X: moodArray[4] ?? 0.0,
+          },
+          currentFocus: wm.current_focus,
+          shockState: wm.shock_state,
+          lastUpdate: wm.last_update,
+          needsDPSync: true,  // DPs not restored yet (will sync when in range)
+          needsDBSync: false, // Restored from DB - no DB sync needed!
+          needsSync: false,   // Legacy flag
+          networkStatus: "restored",
+          lastSyncSuccess: Date.now(),
+        };
+        
+        console.warn(`§b[Recovery] Built cache for ${villagerID.substring(0, 12)}: C=${wmCache.currentMood.C} V=${wmCache.currentMood.V} I=${wmCache.currentMood.I}`);
+      }
+
+      // Restore to trackedVillagers Map with WM cache
       trackedVillagers.set(villagerID, {
         firstSeen: dbVillager.created_at,
         lastSeen: dbVillager.last_seen,
@@ -69,42 +108,32 @@ async function autoRecoverState() {
           z: dbVillager.home_z,
         },
         nameTag: dbVillager.name,
+        workingMemory: wmCache, // Populate cache (proximity-independent access!)
       });
       restoredCount++;
-      
-      // Restore DynamicProperties if Working Memory exists
-      if (dbVillager.working_memory) {
-        // Try to get entity (might not be loaded yet)
+
+      // Restore DynamicProperties if entity is loaded (cache already populated above!)
+      if (wmCache) {
+        // Try to get entity (might not be loaded if out of range)
         let entity = activeVillagers.get(villagerID);
         if (!entity) {
           entity = world.getEntity(villagerID);
         }
-        
+
         if (entity?.isValid) {
-          const wm = dbVillager.working_memory;
-          
-          // Use setWorkingMemory helper (DRY principle)
-          const success = setWorkingMemory(entity, {
-            currentMood: {
-              C: wm.current_mood_manual?.[0] ?? wm.current_mood_minilm?.[0] ?? 0.0,
-              V: wm.current_mood_manual?.[1] ?? wm.current_mood_minilm?.[1] ?? 0.0,
-              I: wm.current_mood_manual?.[2] ?? wm.current_mood_minilm?.[2] ?? 0.0,
-              S: wm.current_mood_manual?.[3] ?? wm.current_mood_minilm?.[3] ?? 0.0,
-              X: wm.current_mood_manual?.[4] ?? wm.current_mood_minilm?.[4] ?? 0.0,
-            },
-            currentFocus: wm.current_focus,
-            shockState: wm.shock_state,
-            lastUpdate: wm.last_update,
-          });
+          // Use setWorkingMemory helper to write DPs (cache already set correctly above!)
+          // IMPORTANT: skipCacheUpdate=true prevents overwriting the cache we just built!
+          const success = setWorkingMemory(entity, wmCache, { skipCacheUpdate: true });
           
           if (success) {
-            // Clear needsSync flag - data came FROM database, no need to sync back
+            // Clear needsSync flag in DPs - data came FROM database
             entity.setDynamicProperty("wm_needsSync", false);
             entity.setDynamicProperty("wm_lastSyncSuccess", Date.now());
             entity.setDynamicProperty("wm_networkStatus", "restored");
             dpRestoredCount++;
           }
         }
+        // If entity not loaded, that's OK - cache is already populated!
       }
     }
     
@@ -197,6 +226,7 @@ function startProximityDetection() {
               lastSeen: Date.now(),
               location: villager.location,
               nameTag: villager.nameTag || "Unnamed",
+              workingMemory: null, // Not initialized yet (LOCAL MIRROR pattern)
             });
             
             // Queue for delayed batch initialization

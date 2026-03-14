@@ -7,7 +7,7 @@ import {
   hasWorkingMemory,
   clearWorkingMemory,
   getWorkingMemoryByteCount,
-} from "../working_memory_helpers.js";
+} from "../helpers/working_memory_helpers.js";
 
 /**
  * Tests DynamicProperties helper functions on the nearest villager to command source.

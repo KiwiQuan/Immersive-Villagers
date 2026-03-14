@@ -10,6 +10,7 @@
 import { ActionFormData } from "@minecraft/server-ui";
 import { showProximityDebugModal } from "./debug_modals/proximity_modal.js";
 import { showDatabaseDebugModal } from "./debug_modals/database_modal.js";
+import { showWorkingMemoryDebugModal } from "./debug_modals/working_memory_modal.js";
 
 /**
  * Shows main debug menu with all available tools.
@@ -25,12 +26,14 @@ export async function showMainDebugModal(player) {
       `§e━━━ IMMERSIVE VILLAGERS DEBUG ━━━\n\n` +
         `§7Select a debugging tool:\n\n` +
         `§6Proximity Detection §7- Test villager tracking\n` +
-        `§9Database Operations §7- CRUD testing\n`
+        `§9Database Operations §7- CRUD testing\n` +
+        `§dWorking Memory §7- Inspect & modify WM state\n`
     );
 
-    form.button("§6📍 Proximity Detection\n§7Test tracking accuracy");
-    form.button("§9💾 Database Operations\n§7Test backend CRUD");
-    form.button("§8✕ Close");
+    form.button("⚙ Proximity Detection\nTest tracking accuracy");
+    form.button("💾 Database Operations\nTest backend CRUD");
+    form.button("🧠 Working Memory\nInspect & modify WM");
+    form.button("✕ Close");
 
     const response = await form.show(player);
 
@@ -42,6 +45,9 @@ export async function showMainDebugModal(player) {
         break;
       case 1:
         await showDatabaseDebugModal(player);
+        break;
+      case 2:
+        await showWorkingMemoryDebugModal(player);
         break;
       default:
         return;
@@ -55,3 +61,4 @@ export async function showMainDebugModal(player) {
 // Re-export modal functions for direct access
 export { showProximityDebugModal } from "./debug_modals/proximity_modal.js";
 export { showDatabaseDebugModal } from "./debug_modals/database_modal.js";
+export { showWorkingMemoryDebugModal } from "./debug_modals/working_memory_modal.js";

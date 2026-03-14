@@ -22,7 +22,7 @@ import {
 import {
   clearAllWorkingMemory,
   clearWorkingMemory,
-} from "../../../layers/layer4_working_memory/working_memory_helpers.js";
+} from "../../../layers/layer4_working_memory/helpers/working_memory_helpers.js";
 
 const BACKEND_BASE_URL = "/api/villagers";
 /**
@@ -44,15 +44,15 @@ export async function showDatabaseDebugModal(player) {
         `§7Select an operation below:`,
     );
 
-    form.button("§a✓ Register New Villager");
-    form.button("§e⚙ Update Villager Status");
-    form.button("§c✗ Remove Villager");
-    form.button("§b📄 View Villager in DB");
-    form.button("§6📦 Batch: Register All");
-    form.button("§6📦 Batch: Set All Active");
-    form.button("§6📦 Batch: Set All Inactive");
-    form.button("§4🗑 FULL RESET (Danger)");
-    form.button("§8◄ Back");
+    form.button("✓ Register New Villager");
+    form.button("⚙ Update Villager Status");
+    form.button("✗ Remove Villager");
+    form.button("📄 View Villager in DB");
+    form.button("📦 Batch: Register All");
+    form.button("📦 Batch: Set All Active");
+    form.button("📦 Batch: Set All Inactive");
+    form.button("🗑 FULL RESET (Danger)");
+    form.button("◄ Back");
 
     const response = await form.show(player);
 
@@ -111,10 +111,10 @@ async function showRegisterVillagerModal(player) {
 
     const villagerList = Array.from(trackedVillagers.entries());
     for (const [villagerID, metadata] of villagerList) {
-      form.button(`${metadata.nameTag}\n§7ID: ${villagerID.slice(0, 8)}...`);
+      form.button(`${metadata.nameTag}\nID: ${villagerID.slice(0, 8)}...`);
     }
 
-    form.button("§8◄ Cancel");
+    form.button("◄ Cancel");
 
     const response = await form.show(player);
 
@@ -179,7 +179,7 @@ async function showUpdateVillagerModal(player) {
       );
     }
 
-    form.button("§8◄ Cancel");
+    form.button("◄ Cancel");
 
     const response = await form.show(player);
 
@@ -256,10 +256,10 @@ async function showRemoveVillagerModal(player) {
 
     const villagerList = Array.from(trackedVillagers.entries());
     for (const [villagerID, metadata] of villagerList) {
-      form.button(`${metadata.nameTag}\n§7ID: ${villagerID.slice(0, 8)}...`);
+      form.button(`${metadata.nameTag}\nID: ${villagerID.slice(0, 8)}...`);
     }
 
-    form.button("§8◄ Cancel");
+    form.button("◄ Cancel");
 
     const response = await form.show(player);
 
@@ -326,10 +326,10 @@ async function showViewVillagerModal(player) {
 
     const villagerList = Array.from(trackedVillagers.entries());
     for (const [villagerID, metadata] of villagerList) {
-      form.button(`${metadata.nameTag}\n§7ID: ${villagerID.slice(0, 8)}...`);
+      form.button(`${metadata.nameTag}\nID: ${villagerID.slice(0, 8)}...`);
     }
 
-    form.button("§8◄ Cancel");
+    form.button("◄ Cancel");
 
     const response = await form.show(player);
 
@@ -563,8 +563,8 @@ async function showFullResetModal(player) {
         `§7Are you absolutely sure?`,
     );
 
-    form.button("§4§l✓ YES, DELETE EVERYTHING");
-    form.button("§8◄ Cancel (Go Back)");
+    form.button("⚠ YES, DELETE EVERYTHING");
+    form.button("◄ Cancel (Go Back)");
 
     const response = await form.show(player);
 

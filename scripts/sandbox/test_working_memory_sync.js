@@ -43,7 +43,7 @@ import {
   getWorkingMemory,
   getWorkingMemoryWithMetadata,
   compareWorkingMemory,
-} from "../layers/layer4_working_memory/working_memory_helpers.js";
+} from "../layers/layer4_working_memory/helpers/working_memory_helpers.js";
 
 // ========================================
 // STATE MANAGEMENT

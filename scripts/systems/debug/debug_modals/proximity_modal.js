@@ -71,10 +71,10 @@ export async function showProximityDebugModal(player) {
         `\n§7Select an option below:`
     );
 
-    form.button("§a● View Active Villagers");
-    form.button("§7○ View All Tracked");
-    form.button("§e🔍 Inspect Specific Villager");
-    form.button("§8✕ Close");
+    form.button("● View Active Villagers");
+    form.button("○ View All Tracked");
+    form.button("🔍 Inspect Specific Villager");
+    form.button("✕ Close");
 
     const response = await form.show(player);
 
@@ -122,7 +122,7 @@ async function showActiveVillagersModal(player) {
     }
 
     form.body(bodyText);
-    form.button("§8◄ Back");
+    form.button("◄ Back");
 
     const response = await form.show(player);
     if (!response.canceled) {
@@ -162,7 +162,7 @@ async function showAllTrackedModal(player) {
     }
 
     form.body(bodyText);
-    form.button("§8◄ Back");
+    form.button("◄ Back");
 
     const response = await form.show(player);
     if (!response.canceled) {
@@ -190,7 +190,7 @@ async function showVillagerPickerModal(player) {
           "§7Summon villagers or move near existing\n" +
           "§7villagers to begin tracking."
       );
-      form.button("§7Back");
+      form.button("◄ Back");
       const response = await form.show(player);
       showProximityDebugModal(player);
       return;
@@ -210,7 +210,7 @@ async function showVillagerPickerModal(player) {
       form.button(`${statusIcon} ${metadata.nameTag}`);
     }
 
-    form.button("§8◄ Back");
+    form.button("◄ Back");
 
     const response = await form.show(player);
 
@@ -277,7 +277,7 @@ async function showVillagerDetailsModal(player, villagerID, metadata) {
       `§7${formatLocation(metadata.location)}`;
 
     form.body(bodyText);
-    form.button("§8◄ Back");
+    form.button("◄ Back");
 
     const response = await form.show(player);
     if (!response.canceled) {

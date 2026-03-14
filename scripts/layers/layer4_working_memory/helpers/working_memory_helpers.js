@@ -10,9 +10,26 @@ import {
   getWorkingMemoryPropertyNames,
   getDefaultValue,
   validatePropertyValue,
-} from "./working_memory_schema.js";
-import { debugLog } from "../../utils/debug_mode_helper.js";
-import { getRequest, postRequest } from "../../utils/network_helpers.js";
+} from "../working_memory_schema.js";
+import { debugLog } from "../../../utils/debug_mode_helper.js";
+import { getRequest, postRequest } from "../../../utils/network_helpers.js";
+import { trackedVillagers } from "../../../systems/villager_lifecycle/lifecycle_state.js";
+import {
+  updateWorkingMemoryCache,
+  getWorkingMemoryFromCache,
+  hasWorkingMemoryInCache,
+  initializeWorkingMemoryCache,
+  syncCacheToDynamicProperties,
+} from "./working_memory_chache.js";
+import {
+  hasWorkingMemoryInDB,
+  getWorkingMemoryFromDB,
+  compareWorkingMemoryCore,
+} from "./working_memory_db.js";
+
+// ========================================
+// DYNAMIC PROPERTY OPERATIONS
+// ========================================
 
 /**
  * Reads all Working Memory properties from an entity's DynamicProperties.
@@ -95,10 +112,14 @@ function getWorkingMemoryWithMetadata(entity) {
  * @param {Object} workingMemory.currentMood - Mood vector [C, V, I, S, X]
  * @param {boolean} workingMemory.shockState - Shock state flag
  * @param {string} workingMemory.networkStatus - Network status
+ * @param {Object} options - Optional configuration
+ * @param {boolean} options.skipCacheUpdate - If true, don't update cache (for auto-recovery)
  * @returns {boolean} True if write succeeded, false if entity invalid
  * @throws {Error} If property write fails
  */
-function setWorkingMemory(entity, workingMemory) {
+function setWorkingMemory(entity, workingMemory, options = {}) {
+  const { skipCacheUpdate = false } = options;
+  
   if (!entity || !entity.isValid) {
     debugLog("DynamicProperties", "setWorkingMemory failed: entity invalid", {
       entityId: entity?.id || "unknown",
@@ -127,6 +148,14 @@ function setWorkingMemory(entity, workingMemory) {
       villagerID: entity.id,
       mood: workingMemory.currentMood,
     });
+
+    // Update cache (LOCAL MIRROR pattern) - skip if auto-recovery already set it!
+    if (!skipCacheUpdate) {
+      const updatedWM = getWorkingMemory(entity);
+      if (updatedWM) {
+        updateWorkingMemoryCache(entity.id, updatedWM);
+      }
+    }
 
     return true;
   } catch (error) {
@@ -182,6 +211,12 @@ function updateWorkingMemoryProperty(entity, propertyName, value) {
       value,
     });
 
+    // Update cache (LOCAL MIRROR pattern)
+    const updatedWM = getWorkingMemory(entity);
+    if (updatedWM) {
+      updateWorkingMemoryCache(entity.id, updatedWM);
+    }
+
     return true;
   } catch (error) {
     console.error(
@@ -194,90 +229,113 @@ function updateWorkingMemoryProperty(entity, propertyName, value) {
 }
 
 /**
- * Initializes Working Memory properties with default values AND syncs to database.
- * This atomic operation eliminates race conditions by ensuring DP and DB are always in sync.
- * Backend uses LAZY INITIALIZATION: ensures villager exists first, then syncs WM in ONE transaction.
- * NO FK violations possible - backend handles everything!
- * Should be called when a villager first spawns or after data reset.
+ * Initializes Working Memory with CACHE-FIRST pattern.
+ * 
+ * Flow:
+ * 1. Initialize cache (immediate, source of truth)
+ * 2. Sync cache to DPs (backup layer)
+ * 3. Sync cache to DB (remote backup)
+ * 
  * @param {Entity} entity - The villager entity
  * @param {Object} options - Configuration options
- * @param {boolean} options.skipSync - If true, only set DPs without syncing (for batch operations)
- * @returns {Promise<boolean>} True if initialization succeeded, false if entity invalid
+ * @param {boolean} options.skipSync - If true, skip DB sync (for batch operations)
+ * @returns {Promise<boolean>} True if initialization succeeded
  */
 async function initializeWorkingMemory(entity, options = {}) {
   const { skipSync = false } = options;
-  
+
   if (!entity || !entity.isValid) {
-    console.warn(
-      `?e[DynamicProperties] Cannot initialize Working Memory: entity invalid`,
-    );
+    console.warn(`§e[WM Init] Cannot initialize: entity invalid`);
     return false;
   }
 
+  const villagerID = entity.id;
+
   try {
-    const propertyNames = getWorkingMemoryPropertyNames();
-
-    // Step 1: Set DynamicProperties (synchronous, reliable)
-    for (const propName of propertyNames) {
-      const defaultValue = getDefaultValue(propName);
-      entity.setDynamicProperty(propName, defaultValue);
+    // Step 1: Initialize CACHE (CACHE-FIRST!)
+    const cacheSuccess = initializeWorkingMemoryCache(villagerID);
+    if (!cacheSuccess) {
+      console.warn(`§e[WM Init] Failed to initialize cache for ${villagerID.substring(0, 12)}`);
+      return false;
     }
 
-    entity.setDynamicProperty("wm_lastUpdate", Date.now());
+    // Step 2: Sync cache to DPs (entity is available now)
+    const dpSyncSuccess = syncCacheToDynamicProperties(entity);
+    if (!dpSyncSuccess) {
+      console.warn(`§e[WM Init] Cache OK but DP sync failed for ${villagerID.substring(0, 12)}`);
+    }
 
-    debugLog("DynamicProperties", "initializeWorkingMemory: DPs set", {
-      villagerID: entity.id,
-      propertyCount: propertyNames.length,
-    });
+    console.warn(`§a[WM Init] Initialized WM for ${villagerID.substring(0, 12)}`);
 
-    console.warn(
-      `?a[DynamicProperties] Initialized Working Memory for ${entity.id}`,
-    );
-
-    // Step 2: Sync to database (skip if called from batch operation)
+    // Step 3: Sync to database (skip if batch operation)
     if (skipSync) {
-      // Batch operation will handle sync - just mark as needing it
-      entity.setDynamicProperty("wm_networkStatus", "dp_only");
-      entity.setDynamicProperty("wm_needsSync", true);
-      return true;
+      return true; // Batch will handle DB sync
     }
-    
-    // Individual sync (for non-batch operations)
-    try {
-      const wmWithMetadata = getWorkingMemoryWithMetadata(entity);
 
-      if (!wmWithMetadata) {
-        throw new Error("Failed to read WM after setting DPs");
+    // Individual DB sync
+    try {
+      const wmCache = getWorkingMemoryFromCache(villagerID);
+      
+      if (!wmCache) {
+        throw new Error("Cache missing after initialization");
       }
+
+      // Prepare payload with metadata
+      const wmWithMetadata = {
+        villagerID: villagerID,
+        currentFocus: wmCache.currentFocus,
+        currentMood: wmCache.currentMood,
+        shockState: wmCache.shockState,
+        lastUpdate: wmCache.lastUpdate,
+        villagerMetadata: {
+          name: entity.nameTag || "Unnamed",
+          location: entity.location,
+          profession: entity.typeId || "unknown",
+        }
+      };
 
       await postRequest("/api/memory/sync", wmWithMetadata);
 
-      entity.setDynamicProperty("wm_networkStatus", "initialized");
-      entity.setDynamicProperty("wm_lastSyncSuccess", Date.now());
-      entity.setDynamicProperty("wm_needsSync", false);
+      const timestamp = Date.now();
+      
+      // Update cache with sync status (CACHE-FIRST!)
+      const metadata = trackedVillagers.get(villagerID);
+      if (metadata?.workingMemory) {
+        metadata.workingMemory.needsDBSync = false;
+        metadata.workingMemory.needsSync = false;
+        metadata.workingMemory.networkStatus = "initialized";
+        metadata.workingMemory.lastSyncSuccess = timestamp;
+      }
+      
+      // Update DP for consistency
+      if (entity.isValid) {
+        entity.setDynamicProperty("wm_networkStatus", "initialized");
+        entity.setDynamicProperty("wm_lastSyncSuccess", timestamp);
+        entity.setDynamicProperty("wm_needsSync", false);
+      }
 
-      debugLog("DynamicProperties", "Working Memory synced to DB", {
-        villagerID: entity.id,
-      });
+      debugLog("WM Init", "DB sync complete", { villagerID });
     } catch (syncError) {
-      // DB sync failed, but DPs are still valid - villager is usable
-      entity.setDynamicProperty(
-        "wm_networkStatus",
-        `init_sync_failed: ${syncError.message}`,
-      );
-      entity.setDynamicProperty("wm_needsSync", true); // Retry later
+      // DB sync failed, but cache + DPs exist - still usable
+      const metadata = trackedVillagers.get(villagerID);
+      if (metadata?.workingMemory) {
+        metadata.workingMemory.networkStatus = `init_sync_failed: ${syncError.message}`;
+        metadata.workingMemory.needsDBSync = true;
+        metadata.workingMemory.needsSync = true;
+      }
 
-      console.warn(
-        `?e[DynamicProperties] WM initialized but DB sync failed for ${entity.id}: ${syncError.message}`,
-      );
-      console.warn("?7Villager is still usable, will retry sync later");
+      if (entity.isValid) {
+        entity.setDynamicProperty("wm_networkStatus", `init_sync_failed: ${syncError.message}`);
+        entity.setDynamicProperty("wm_needsSync", true);
+      }
+
+      console.warn(`§e[WM Init] DB sync failed for ${villagerID.substring(0, 12)}: ${syncError.message}`);
+      console.warn("§7Villager still usable, will retry sync later");
     }
 
     return true;
   } catch (error) {
-    console.error(
-      `?c[DynamicProperties] Failed to initialize Working Memory for ${entity.id}: ${error.message}`,
-    );
+    console.error(`§c[WM Init] Failed for ${villagerID.substring(0, 12)}: ${error.message}`);
     return false;
   }
 }
@@ -375,8 +433,17 @@ function markForSync(entity) {
   if (!entity || !entity.isValid) return false;
 
   try {
+    const timestamp = Date.now();
     entity.setDynamicProperty("wm_needsSync", true);
-    entity.setDynamicProperty("wm_lastUpdate", Date.now());
+    entity.setDynamicProperty("wm_lastUpdate", timestamp);
+
+    // Update cache (LOCAL MIRROR pattern)
+    const metadata = trackedVillagers.get(entity.id);
+    if (metadata?.workingMemory) {
+      metadata.workingMemory.needsSync = true;
+      metadata.workingMemory.lastUpdate = timestamp;
+    }
+
     return true;
   } catch (error) {
     console.warn(
@@ -417,95 +484,13 @@ function clearAllWorkingMemory(entity) {
   }
 }
 
-/**
- * Checks if Working Memory exists in the database.
- * Used to verify complete initialization (DPs + DB both exist).
- * @param {string} villagerID - Villager entity ID
- * @returns {Promise<boolean>} True if WM exists in DB, false otherwise
- */
-async function hasWorkingMemoryInDB(villagerID) {
-  try {
-    const response = await getRequest(
-      `/api/villagers/get_with_memory/${villagerID}`,
-    );
-
-    return response?.villager?.working_memory !== null && 
-           response?.villager?.working_memory !== undefined;
-  } catch (error) {
-    debugLog(
-      "DynamicProperties",
-      "hasWorkingMemoryInDB failed",
-      { villagerID, error: error.message },
-    );
-    return false;
-  }
-}
-
-/**
- * Fetches Working Memory from the database for comparison/verification.
- * IMPORTANT: This should ONLY be used for diagnostics/verification.
- * Production flow: DynamicProperties ? Database (one-way).
- * Database should NEVER update DynamicProperties (except recovery/warm-start).
- *
- * @param {string} villagerID - Villager entity ID
- * @returns {Promise<Object|null>} Working Memory from DB or null if not found
- */
-async function getWorkingMemoryFromDB(villagerID) {
-  try {
-    const response = await getRequest(
-      `/api/villagers/get_with_memory/${villagerID}`,
-    );
-
-    if (!response || !response.villager) {
-      debugLog(
-        "DynamicProperties",
-        "getWorkingMemoryFromDB: villager not found",
-        { villagerID },
-      );
-      return null;
-    }
-
-    const wm = response.villager.working_memory;
-
-    // No working memory in DB
-    if (!wm || wm.villager_id === null) {
-      debugLog("DynamicProperties", "getWorkingMemoryFromDB: no WM in DB", {
-        villagerID,
-      });
-      return null;
-    }
-
-    // Parse VECTOR(5) string to array
-    let moodVector = wm.current_mood_manual;
-    if (typeof moodVector === "string") {
-      moodVector = JSON.parse(moodVector);
-    }
-
-    // Return in same format as getWorkingMemory() for easy comparison
-    return {
-      villagerID: wm.villager_id,
-      currentFocus: wm.current_focus || null,
-      currentMood: {
-        C: moodVector?.[0] ?? 0.0,
-        V: moodVector?.[1] ?? 0.0,
-        I: moodVector?.[2] ?? 0.0,
-        S: moodVector?.[3] ?? 0.0,
-        X: moodVector?.[4] ?? 0.0,
-      },
-      shockState: wm.shock_state || false,
-      lastUpdate: wm.last_update || 0,
-    };
-  } catch (error) {
-    console.warn(
-      `?e[DynamicProperties] Failed to fetch WM from DB for ${villagerID}: ${error.message}`,
-    );
-    return null;
-  }
-}
+// ========================================
+// DATABASE OPERATIONS (Wrapper for working_memory_db.js)
+// ========================================
 
 /**
  * Compares DynamicProperties Working Memory with Database Working Memory.
- * Used for diagnostics and verifying sync success.
+ * Wrapper for compareWorkingMemoryCore that provides getWorkingMemory automatically.
  *
  * @param {Entity} entity - The villager entity
  * @returns {Promise<Object>} Comparison result with differences
@@ -515,54 +500,17 @@ async function compareWorkingMemory(entity) {
     return { status: "error", message: "Invalid entity" };
   }
 
-  const villagerID = entity.id;
-
-  try {
-    const dpWM = getWorkingMemory(entity);
-    const dbWM = await getWorkingMemoryFromDB(villagerID);
-
-    if (!dpWM) {
-      return { status: "error", message: "No DynamicProperties WM" };
-    }
-
-    if (!dbWM) {
-      return { status: "error", message: "No Database WM" };
-    }
-
-    // Compare mood vectors
-    const moodDiff = {
-      C: Math.abs(dpWM.currentMood.C - dbWM.currentMood.C),
-      V: Math.abs(dpWM.currentMood.V - dbWM.currentMood.V),
-      I: Math.abs(dpWM.currentMood.I - dbWM.currentMood.I),
-      S: Math.abs(dpWM.currentMood.S - dbWM.currentMood.S),
-      X: Math.abs(dpWM.currentMood.X - dbWM.currentMood.X),
-    };
-
-    const maxDiff = Math.max(...Object.values(moodDiff));
-    const inSync = maxDiff < 0.001; // Floating point tolerance
-
-    return {
-      status: "success",
-      inSync,
-      maxDifference: maxDiff,
-      dynamicProperties: dpWM,
-      database: dbWM,
-      differences: {
-        mood: moodDiff,
-        focus: dpWM.currentFocus !== dbWM.currentFocus,
-        shock: dpWM.shockState !== dbWM.shockState,
-        timestamp: Math.abs(dpWM.lastUpdate - dbWM.lastUpdate),
-      },
-    };
-  } catch (error) {
-    return {
-      status: "error",
-      message: error.message,
-    };
+  const dpWM = getWorkingMemory(entity);
+  
+  if (!dpWM) {
+    return { status: "error", message: "No DynamicProperties WM" };
   }
+
+  return compareWorkingMemoryCore(dpWM, entity.id);
 }
 
 export {
+  // Dynamic Property operations
   getWorkingMemory,
   getWorkingMemoryWithMetadata,
   getWorkingMemoryFromDB,

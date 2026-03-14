@@ -65,14 +65,43 @@ export function updateActiveVillagers(newMap) {
 /**
  * Map of all tracked villagers with metadata.
  * Persists across active/inactive transitions.
+ * 
+ * "CACHE-FIRST" Pattern:
+ * - trackedVillagers = PRIMARY SOURCE OF TRUTH (fast, proximity-independent!)
+ * - DynamicProperties = persistence layer ONLY (backup/restore across script reloads)
+ * - Database = remote backup (syncs periodically)
+ * 
+ * Write Flow:
+ * 1. Write to cache (IMMEDIATE, no entity needed!)
+ * 2. Mark needsDPSync=true (DPs need updating)
+ * 3. Mark needsDBSync=true (DB needs updating)
+ * 4. When entity in range → sync cache to DPs (async)
+ * 5. Sync loop → sync cache to DB (async)
+ * 
+ * Benefits:
+ * - Modify WM from ANY distance (no entity required!)
+ * - Faster calculations (memory access vs entity.setDynamicProperty)
+ * - AI logic works without proximity constraints
+ * - DPs become "save file" not "runtime storage"
+ * 
  * @type {Map<string, Object>}
  *
  * Metadata structure:
  * {
- *   firstSeen: number,     // Unix timestamp
- *   lastSeen: number,      // Unix timestamp
- *   location: Object,      // {x, y, z}
- *   nameTag: string        // Villager name
+ *   firstSeen: number,         // Unix timestamp
+ *   lastSeen: number,          // Unix timestamp
+ *   location: Object,          // {x, y, z}
+ *   nameTag: string,           // Villager name
+ *   workingMemory: {           // PRIMARY WM STATE (source of truth!)
+ *     currentMood: { C, V, I, S, X },
+ *     currentFocus: string | null,
+ *     shockState: boolean,
+ *     lastUpdate: number,
+ *     needsDPSync: boolean,    // True if DPs need updating from cache
+ *     needsDBSync: boolean,    // True if DB needs updating from cache
+ *     networkStatus: string,
+ *     lastSyncSuccess: number | null
+ *   } | null                   // null if not initialized yet
  * }
  */
 export const trackedVillagers = new Map();

@@ -16,10 +16,16 @@ import {
   hasWorkingMemory,
   getWorkingMemory,
   initializeWorkingMemory,
-} from "./working_memory_helpers.js";
+} from "./helpers/working_memory_helpers.js";
 import { postRequestAsync } from "../../utils/network_helpers.js";
 import { debugLog } from "../../utils/debug_mode_helper.js";
-import { activeVillagers } from "../../systems/villager_lifecycle/lifecycle_state.js";
+import { 
+  activeVillagers, 
+  trackedVillagers 
+} from "../../systems/villager_lifecycle/lifecycle_state.js";
+import {
+  getWorkingMemoryFromCache,
+} from "./helpers/working_memory_chache.js";
 
 const SYNC_INTERVAL_TICKS = 20;
 const SYNC_STARTUP_DELAY_TICKS = 10; // Offset from lifecycle to prevent frame spikes
@@ -55,53 +61,86 @@ function startWorkingMemorySyncLoop() {
         let syncedCount = 0;
         let needsSyncCount = 0;
 
-        // Iterate pre-fetched entities from lifecycle Map (NO getEntities call!)
-        // Lifecycle already queried - we just consume the Map entries
-        for (const [villagerID, villager] of activeVillagers) {
-          if (!villager?.isValid) continue;
+        // CACHE-FIRST: Iterate over ALL tracked villagers (proximity-independent!)
+        // No need for entities - cache has everything!
+        for (const [villagerID, metadata] of trackedVillagers) {
+          const wmCache = metadata.workingMemory;
 
-          const initialized = hasWorkingMemory(villager);
-
-          if (!initialized) {
+          if (!wmCache) {
             // Skip villagers without WM - batch init will handle them
-            // No recovery needed; batch queue handles initialization
-            debugLog("Layer4", "Skipping villager without WM (batch init in progress)", {
+            debugLog("Layer4", "Skipping villager without WM cache (batch init in progress)", {
               villagerID,
             });
             continue;
           }
 
-          const needsSync = villager.getDynamicProperty("wm_needsSync");
+          const needsSync = wmCache.needsDBSync; // Read from cache!
 
           if (needsSync) needsSyncCount++;
 
           if (needsSync) {
-            console.warn(`§e[Layer 4] Syncing villager ${villagerID}...`);
+            console.warn(`§e[Layer 4] Syncing villager ${villagerID.substring(0, 12)}...`);
 
-            const workingMemory = getWorkingMemory(villager);
-
-            if (!workingMemory) {
-              debugLog("Layer4", "Failed to read Working Memory for sync", {
-                villagerID,
-              });
-              continue;
+            // Validate mood components (must all be numbers!)
+            const mood = wmCache.currentMood;
+            if (
+              typeof mood.C !== 'number' || 
+              typeof mood.V !== 'number' || 
+              typeof mood.I !== 'number' || 
+              typeof mood.S !== 'number' || 
+              typeof mood.X !== 'number'
+            ) {
+              console.warn(`§c[Layer 4] Invalid mood vector for ${villagerID.substring(0, 12)}: C=${mood.C} V=${mood.V} I=${mood.I} S=${mood.S} X=${mood.X}`);
+              continue; // Skip this villager
             }
+
+            // Prepare payload from cache (no entity needed!)
+            const workingMemory = {
+              villagerID: villagerID,
+              currentFocus: wmCache.currentFocus,
+              currentMood: wmCache.currentMood,
+              shockState: wmCache.shockState,
+              lastUpdate: wmCache.lastUpdate,
+            };
 
             postRequestAsync(BACKEND_SYNC_ENDPOINT, workingMemory)
               .then(() => {
-                if (villager.isValid) {
-                  villager.setDynamicProperty("wm_needsSync", false);
-                  villager.setDynamicProperty("wm_lastSyncSuccess", Date.now());
-                  villager.setDynamicProperty("wm_networkStatus", "synced");
-                  console.warn(`§a[Layer 4] Sync complete for ${villagerID}`);
+                const timestamp = Date.now();
+                
+                // Update cache (CACHE-FIRST pattern - primary update!)
+                const syncedMetadata = trackedVillagers.get(villagerID);
+                if (syncedMetadata?.workingMemory) {
+                  syncedMetadata.workingMemory.needsDBSync = false;
+                  syncedMetadata.workingMemory.needsSync = false;
+                  syncedMetadata.workingMemory.networkStatus = "synced";
+                  syncedMetadata.workingMemory.lastSyncSuccess = timestamp;
                 }
+                
+                // Update DPs if entity is loaded (optional backup)
+                const entity = activeVillagers.get(villagerID);
+                if (entity?.isValid) {
+                  entity.setDynamicProperty("wm_needsSync", false);
+                  entity.setDynamicProperty("wm_lastSyncSuccess", timestamp);
+                  entity.setDynamicProperty("wm_networkStatus", "synced");
+                }
+                
+                console.warn(`§a[Layer 4] Sync complete for ${villagerID.substring(0, 12)}`);
               })
               .catch((error) => {
-                if (villager.isValid) {
-                  villager.setDynamicProperty("wm_networkStatus", "error");
+                // Update cache with error status (CACHE-FIRST!)
+                const syncedMetadata = trackedVillagers.get(villagerID);
+                if (syncedMetadata?.workingMemory) {
+                  syncedMetadata.workingMemory.networkStatus = "error";
                 }
+                
+                // Update DP if loaded (optional)
+                const entity = activeVillagers.get(villagerID);
+                if (entity?.isValid) {
+                  entity.setDynamicProperty("wm_networkStatus", "error");
+                }
+                
                 console.warn(
-                  `§e[Layer 4] Sync failed for ${villagerID}: ${error.message}`,
+                  `§e[Layer 4] Sync failed for ${villagerID.substring(0, 12)}: ${error.message}`,
                 );
               });
 
@@ -111,12 +150,12 @@ function startWorkingMemorySyncLoop() {
 
         if (needsSyncCount > 0) {
           console.warn(
-            `§a[Layer 4] Sync cycle: ${syncedCount} sync requests sent (from ${activeVillagers.size} active)`,
+            `§a[Layer 4] Sync cycle: ${syncedCount} sync requests sent (from ${trackedVillagers.size} tracked)`,
           );
         }
 
         debugLog("Layer4", "Sync loop complete", {
-          activeVillagers: activeVillagers.size,
+          trackedVillagers: trackedVillagers.size,
           syncNeeded: needsSyncCount,
           requestsSent: syncedCount,
         });

@@ -28,7 +28,10 @@ import { initializeLayer4ForVillager } from "../../layers/layer4_working_memory/
 import { 
   initializeWorkingMemory, 
   getWorkingMemoryWithMetadata 
-} from "../../layers/layer4_working_memory/working_memory_helpers.js";
+} from "../../layers/layer4_working_memory/helpers/working_memory_helpers.js";
+import {
+  syncCacheToDynamicProperties,
+} from "../../layers/layer4_working_memory/helpers/working_memory_chache.js";
 import { createBatchQueue } from "../../utils/batch_queue.js";
 
 // ========================================
@@ -116,15 +119,8 @@ async function processInitBatch(batch) {
   const wmDataArray = [];
   
   for (const { id: villagerID, entity: freshEntity } of validVillagers) {
-    // Mark as tracked
-    trackedVillagers.set(villagerID, {
-      firstSeen: Date.now(),
-      lastSeen: Date.now(),
-      location: freshEntity.location,
-      nameTag: freshEntity.nameTag || "Unnamed",
-    });
-    
     // Initialize DPs only (no network call)
+    // This will also update cache via initializeWorkingMemory
     const success = initializeWorkingMemory(freshEntity, { skipSync: true });
     
     if (success) {
@@ -141,12 +137,24 @@ async function processInitBatch(batch) {
     try {
       await postRequest("/api/memory/sync", { memories: wmDataArray });
       
-      // Mark all as synced
+      const timestamp = Date.now();
+      
+      // Mark all as synced (CACHE-FIRST: update cache first, DPs second!)
       for (const { id: villagerID } of validVillagers) {
+        // Update cache (CACHE-FIRST pattern - PRIMARY update!)
+        const metadata = trackedVillagers.get(villagerID);
+        if (metadata?.workingMemory) {
+          metadata.workingMemory.needsDBSync = false;
+          metadata.workingMemory.needsSync = false;
+          metadata.workingMemory.networkStatus = "initialized";
+          metadata.workingMemory.lastSyncSuccess = timestamp;
+        }
+        
+        // Update DPs (BACKUP layer - optional)
         const entity = activeVillagers.get(villagerID) || world.getEntity(villagerID);
         if (entity?.isValid) {
           entity.setDynamicProperty("wm_networkStatus", "initialized");
-          entity.setDynamicProperty("wm_lastSyncSuccess", Date.now());
+          entity.setDynamicProperty("wm_lastSyncSuccess", timestamp);
           entity.setDynamicProperty("wm_needsSync", false);
         }
       }
@@ -155,12 +163,20 @@ async function processInitBatch(batch) {
     } catch (error) {
       console.warn(`§c[Lifecycle] Batch WM sync failed: ${error.message}`);
       
-      // Mark all as needing sync retry
+      // Mark all as needing sync retry (DP + cache)
       for (const { id: villagerID } of validVillagers) {
         const entity = activeVillagers.get(villagerID) || world.getEntity(villagerID);
         if (entity?.isValid) {
           entity.setDynamicProperty("wm_needsSync", true);
           entity.setDynamicProperty("wm_networkStatus", `batch_sync_failed: ${error.message}`);
+        }
+        
+        // Update cache with error status (CACHE-FIRST!)
+        const metadata = trackedVillagers.get(villagerID);
+        if (metadata?.workingMemory) {
+          metadata.workingMemory.needsDBSync = true;
+          metadata.workingMemory.needsSync = true;
+          metadata.workingMemory.networkStatus = `batch_sync_failed: ${error.message}`;
         }
       }
     }
@@ -258,6 +274,9 @@ async function processActiveStateBatch(batch) {
 export function handleActivation(villagerID, villager) {
   // activeVillagers Map is updated by coordinator
   // This handler only performs side effects
+
+  // CACHE-FIRST: Sync cache to DPs when entity comes in range
+  syncCacheToDynamicProperties(villager);
 
   // Queue active state change for batch processing
   activeStateQueue.add({ villagerID, isActive: true });
