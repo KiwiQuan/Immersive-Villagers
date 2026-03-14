@@ -23,7 +23,7 @@ import {
 } from "./lifecycle_db.js";
 import { postRequest } from "../../utils/network_helpers.js";
 import { notifyNearbyPlayers } from "../../utils/notification_helpers.js";
-import { debugLog } from "../../utils/debug_mode_helper.js";
+import { debugLog, isDebugMode } from "../../utils/debug_mode_helper.js";
 import { initializeLayer4ForVillager } from "../../layers/layer4_working_memory/layer4_init.js";
 import { 
   initializeWorkingMemory, 
@@ -108,7 +108,9 @@ async function processInitBatch(batch) {
   if (villagerDataArray.length > 0) {
     try {
       await registerVillagerInDB(villagerDataArray);
-      console.warn(`§a[Lifecycle] Batch registered ${villagerDataArray.length} villagers`);
+      if (isDebugMode()) {
+        console.warn(`§a[Lifecycle] Batch registered ${villagerDataArray.length} villagers`);
+      }
     } catch (error) {
       console.warn(`§c[Lifecycle] Batch registration failed: ${error.message}`);
       return; // Abort if registration fails
@@ -159,7 +161,9 @@ async function processInitBatch(batch) {
         }
       }
       
-      console.warn(`§a[Lifecycle] Batch synced ${wmDataArray.length} Working Memories`);
+      if (isDebugMode()) {
+        console.warn(`§a[Lifecycle] Batch synced ${wmDataArray.length} Working Memories`);
+      }
     } catch (error) {
       console.warn(`§c[Lifecycle] Batch WM sync failed: ${error.message}`);
       
@@ -230,14 +234,18 @@ async function processActiveStateBatch(batch) {
     const activations = batch.filter(item => item.isActive);
     const deactivations = batch.filter(item => !item.isActive);
     
-    console.warn(
-      `§b[Lifecycle] Batch updating active states: ${activations.length} active, ${deactivations.length} inactive`
-    );
+    if (isDebugMode()) {
+      console.warn(
+        `§b[Lifecycle] Batch updating active states: ${activations.length} active, ${deactivations.length} inactive`
+      );
+    }
     
     // Send batch to backend (route always expects array)
     await postRequest("/api/villagers/set_active", batch);
     
-    console.warn(`§a[Lifecycle] Batch active state update successful (${batch.length} villagers)`);
+    if (isDebugMode()) {
+      console.warn(`§a[Lifecycle] Batch active state update successful (${batch.length} villagers)`);
+    }
     
   } catch (error) {
     console.warn(`§c[Lifecycle] Batch active state update failed: ${error.message}`);
@@ -283,11 +291,13 @@ export function handleActivation(villagerID, villager) {
 
   debugLog("[Villager Lifecycle] Villager marked ACTIVE", { villagerID });
 
-  notifyNearbyPlayers(
-    `§a[System] Villager active: ${villager.nameTag || "Unnamed"}`,
-    villager.location,
-    LIFECYCLE_CONFIG.notificationRadius
-  );
+  if (isDebugMode()) {
+    notifyNearbyPlayers(
+      `§a[System] Villager active: ${villager.nameTag || "Unnamed"}`,
+      villager.location,
+      LIFECYCLE_CONFIG.notificationRadius
+    );
+  }
 }
 
 /**
@@ -307,13 +317,15 @@ export function handleDeactivation(villagerID) {
 
   debugLog("[Villager Lifecycle] Villager marked INACTIVE", { villagerID });
 
-  const metadata = trackedVillagers.get(villagerID);
-  if (metadata) {
-    notifyNearbyPlayers(
-      `§c[System] Villager inactive: ${metadata.nameTag}`,
-      metadata.location,
-      LIFECYCLE_CONFIG.notificationRadius
-    );
+  if (isDebugMode()) {
+    const metadata = trackedVillagers.get(villagerID);
+    if (metadata) {
+      notifyNearbyPlayers(
+        `§c[System] Villager inactive: ${metadata.nameTag}`,
+        metadata.location,
+        LIFECYCLE_CONFIG.notificationRadius
+      );
+    }
   }
 }
 

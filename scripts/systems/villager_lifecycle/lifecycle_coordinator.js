@@ -16,6 +16,7 @@
 
 import { world, system } from "@minecraft/server";
 import { getNearestPlayerDistance } from "../../utils/geometry_helpers.js";
+import { isDebugMode } from "../../utils/debug_mode_helper.js";
 import {
   LIFECYCLE_CONFIG,
   activeVillagers,
@@ -95,7 +96,9 @@ async function autoRecoverState() {
           lastSyncSuccess: Date.now(),
         };
         
-        console.warn(`§b[Recovery] Built cache for ${villagerID.substring(0, 12)}: C=${wmCache.currentMood.C} V=${wmCache.currentMood.V} I=${wmCache.currentMood.I}`);
+        if (isDebugMode()) {
+          console.warn(`§b[Recovery] Built cache for ${villagerID.substring(0, 12)}: C=${wmCache.currentMood.C} V=${wmCache.currentMood.V} I=${wmCache.currentMood.I}`);
+        }
       }
 
       // Restore to trackedVillagers Map with WM cache

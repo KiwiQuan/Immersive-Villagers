@@ -9,6 +9,7 @@
 
 import { world, system } from "@minecraft/server";
 import { ActionFormData, ModalFormData } from "@minecraft/server-ui";
+import { isDebugMode } from "../../../utils/debug_mode_helper.js";
 import { 
   trackedVillagers, 
   activeVillagers 
@@ -175,7 +176,9 @@ async function showModifyForm(player, villagerID, metadata) {
   const sDefault = Math.max(0, Math.min(200, Math.round((S + 1) * 100)));
   const xDefault = Math.max(0, Math.min(200, Math.round((X + 1) * 100)));
   
-  console.warn(`§b[WM Debug] Slider defaults: c=${cDefault} v=${vDefault} i=${iDefault} s=${sDefault} x=${xDefault}`);
+  if (isDebugMode()) {
+    console.warn(`§b[WM Debug] Slider defaults: c=${cDefault} v=${vDefault} i=${iDefault} s=${sDefault} x=${xDefault}`);
+  }
 
   form.slider(
     `§eC §7(Constructiveness) §acurrent: ${C.toFixed(2)}\n§80=−1.0, 100=0.0, 200=+1.0`,
@@ -228,8 +231,9 @@ async function showModifyForm(player, villagerID, metadata) {
   // 7 values: 5 sliders + 1 textfield + 2 toggles (NO label!)
   const [c, v, i, s, x, focus, shock, applyToAll] = response.formValues;
   
-  // Debug: Log form values
-  console.warn(`§b[WM Debug] Form values: c=${c} v=${v} i=${i} s=${s} x=${x} shock=${shock} applyToAll=${applyToAll}`);
+  if (isDebugMode()) {
+    console.warn(`§b[WM Debug] Form values: c=${c} v=${v} i=${i} s=${s} x=${x} shock=${shock} applyToAll=${applyToAll}`);
+  }
 
   // Validate slider values are numbers
   if (typeof c !== 'number' || typeof v !== 'number' || typeof i !== 'number' || 
@@ -249,7 +253,9 @@ async function showModifyForm(player, villagerID, metadata) {
     X: (x / 100) - 1,
   };
   
-  console.warn(`§b[WM Debug] Converted mood: C=${newMood.C.toFixed(2)} V=${newMood.V.toFixed(2)} I=${newMood.I.toFixed(2)} S=${newMood.S.toFixed(2)} X=${newMood.X.toFixed(2)}`);
+  if (isDebugMode()) {
+    console.warn(`§b[WM Debug] Converted mood: C=${newMood.C.toFixed(2)} V=${newMood.V.toFixed(2)} I=${newMood.I.toFixed(2)} S=${newMood.S.toFixed(2)} X=${newMood.X.toFixed(2)}`);
+  }
 
   const newFocus = focus === "none" ? null : focus;
 
@@ -282,7 +288,9 @@ async function showModifyForm(player, villagerID, metadata) {
       }
     } else {
       // Apply to single villager (CACHE-FIRST: no entity needed!)
-      console.warn(`§7[WM Debug] Modifying villager cache: ${villagerID.substring(0, 12)}`);
+      if (isDebugMode()) {
+        console.warn(`§7[WM Debug] Modifying villager cache: ${villagerID.substring(0, 12)}`);
+      }
       
       // Modify cache directly (NO ENTITY NEEDED!)
       const success = modifyWorkingMemoryCache(villagerID, {
@@ -297,7 +305,9 @@ async function showModifyForm(player, villagerID, metadata) {
         return;
       }
 
-      console.warn(`§a[WM Debug] Cache modified successfully`);
+      if (isDebugMode()) {
+        console.warn(`§a[WM Debug] Cache modified successfully`);
+      }
       player.sendMessage(`§aModified ${name} (cache-first!)`);
       player.sendMessage(`§7C=${newMood.C.toFixed(2)} V=${newMood.V.toFixed(2)} I=${newMood.I.toFixed(2)} S=${newMood.S.toFixed(2)} X=${newMood.X.toFixed(2)}`);
       player.sendMessage(`§7DPs will sync when villager is in range`);

@@ -1,4 +1,5 @@
 import { trackedVillagers } from "../../../systems/villager_lifecycle/lifecycle_state.js";
+import { isDebugMode } from "../../../utils/debug_mode_helper.js";
 
 // ========================================
 // CACHE HELPERS (LOCAL MIRROR)
@@ -189,7 +190,9 @@ function syncCacheToDynamicProperties(entity) {
     wm.needsDPSync = false;
     trackedVillagers.set(villagerID, metadata);
     
-    console.warn(`§a[Cache→DP] Synced cache to DPs for ${villagerID.substring(0, 12)}`);
+    if (isDebugMode()) {
+      console.warn(`§a[Cache→DP] Synced cache to DPs for ${villagerID.substring(0, 12)}`);
+    }
     return true;
   } catch (error) {
     console.warn(`§e[Cache→DP] Failed to sync for ${villagerID.substring(0, 12)}: ${error.message}`);

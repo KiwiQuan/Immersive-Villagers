@@ -16,6 +16,7 @@
  */
 
 import { system } from "@minecraft/server";
+import { isDebugMode } from "./debug_mode_helper.js";
 
 /**
  * Creates a configurable batch queue processor.
@@ -100,16 +101,18 @@ export function createBatchQueue(config) {
     // Debounced mode: Reset timer on each addition
     if (debounced && flushHandle) {
       system.clearRun(flushHandle);
-      console.warn(
-        `${logPrefix} Queued ${String(itemId).substring(0, 12)} (timer reset, batch at ${queue.length})`
-      );
+      if (isDebugMode()) {
+        console.warn(
+          `${logPrefix} Queued ${String(itemId).substring(0, 12)} (timer reset, batch at ${queue.length})`
+        );
+      }
     }
 
     // Schedule flush if not already scheduled (fixed mode)
     // OR if timer was just cleared (debounced mode)
     if (!flushHandle || debounced) {
-      if (!debounced && queue.length === 1) {
-        // Fixed mode: Only log on first item
+      if (!debounced && queue.length === 1 && isDebugMode()) {
+        // Fixed mode: Only log on first item (debug only)
         console.warn(`${logPrefix} Started ${name} batch timer (${delayTicks} ticks)...`);
       }
       flushHandle = system.runTimeout(() => flush(), delayTicks);
@@ -129,7 +132,9 @@ export function createBatchQueue(config) {
     queue.length = 0;
     queueSet.clear();
 
-    console.warn(`${logPrefix} Flushing ${name} batch: ${batch.length} items`);
+    if (isDebugMode()) {
+      console.warn(`${logPrefix} Flushing ${name} batch: ${batch.length} items`);
+    }
 
     try {
       await processBatch(batch);

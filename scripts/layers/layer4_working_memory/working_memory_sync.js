@@ -18,7 +18,7 @@ import {
   initializeWorkingMemory,
 } from "./helpers/working_memory_helpers.js";
 import { postRequestAsync } from "../../utils/network_helpers.js";
-import { debugLog } from "../../utils/debug_mode_helper.js";
+import { debugLog, isDebugMode } from "../../utils/debug_mode_helper.js";
 import { 
   activeVillagers, 
   trackedVillagers 
@@ -79,7 +79,9 @@ function startWorkingMemorySyncLoop() {
           if (needsSync) needsSyncCount++;
 
           if (needsSync) {
-            console.warn(`§e[Layer 4] Syncing villager ${villagerID.substring(0, 12)}...`);
+            if (isDebugMode()) {
+              console.warn(`§e[Layer 4] Syncing villager ${villagerID.substring(0, 12)}...`);
+            }
 
             // Validate mood components (must all be numbers!)
             const mood = wmCache.currentMood;
@@ -124,7 +126,9 @@ function startWorkingMemorySyncLoop() {
                   entity.setDynamicProperty("wm_networkStatus", "synced");
                 }
                 
-                console.warn(`§a[Layer 4] Sync complete for ${villagerID.substring(0, 12)}`);
+                if (isDebugMode()) {
+                  console.warn(`§a[Layer 4] Sync complete for ${villagerID.substring(0, 12)}`);
+                }
               })
               .catch((error) => {
                 // Update cache with error status (CACHE-FIRST!)
@@ -148,7 +152,7 @@ function startWorkingMemorySyncLoop() {
           }
         }
 
-        if (needsSyncCount > 0) {
+        if (needsSyncCount > 0 && isDebugMode()) {
           console.warn(
             `§a[Layer 4] Sync cycle: ${syncedCount} sync requests sent (from ${trackedVillagers.size} tracked)`,
           );
