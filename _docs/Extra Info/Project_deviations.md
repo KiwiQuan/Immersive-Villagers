@@ -400,22 +400,29 @@ scripts/
 │   │   ├── lifecycle_coordinator.js  # Main entry point & proximity detection
 │   │   ├── lifecycle_state.js        # Shared state (activeVillagers, trackedVillagers, etc.)
 │   │   ├── lifecycle_handlers.js     # Event handlers (new, activation, deactivation, death)
-│   │   └── lifecycle_db.js           # Database operations (register, activate, remove)
+│   │   ├── lifecycle_db.js           # Database operations (register, activate, remove)
+│   │   └── lifecycle_commands.js     # Manual control commands (start, stop, cleanup)
 │   │
 │   └── debug/
-│       ├── debug_modals.js          # Main entry point & modal router
+│       ├── debug_modals.js           # Main entry point & modal router
 │       ├── debug_modals/
-│       │   ├── proximity_modal.js   # Proximity detection testing UI
-│       │   └── database_modal.js    # Database CRUD operations UI
-│       ├── debug_particles.js       # Visual particle indicators
-│       └── debug_commands.js        # ScriptEvent command handlers
+│       │   ├── proximity_modal.js    # Proximity detection testing UI
+│       │   ├── database_modal.js     # Database CRUD operations UI
+│       │   └── working_memory_modal.js # Working Memory debug & modify UI
+│       ├── debug_particles.js        # Visual particle indicators
+│       └── debug_commands.js         # ScriptEvent command handlers
 │
 ├── layers/
 │   ├── layer4_working_memory/
-│   │   ├── working_memory_sync.js   # Sync loop (consumes activeVillagerEntities)
-│   │   ├── working_memory_helpers.js # DP CRUD operations
+│   │   ├── working_memory_sync.js    # Sync loop (cache → DB, ALL tracked villagers)
+│   │   ├── helpers/
+│   │   │   ├── working_memory_helpers.js # Main entry point, re-exports cache/DB
+│   │   │   ├── working_memory_cache.js   # Cache operations (modify, init, sync to DPs)
+│   │   │   └── working_memory_db.js      # DB operations (fetch, compare)
 │   │   ├── working_memory_schema.js  # Schema definition
-│   │   └── layer4_init.js           # Entry point (called by lifecycle)
+│   │   ├── layer4_init.js            # Entry point (called by lifecycle)
+│   │   └── debug/
+│   │       └── test_dynamic_properties.js # DP testing tools
 │   │
 │   ├── layer3_episodic/ (future)
 │   │   ├── episode_recorder.js
@@ -429,13 +436,15 @@ scripts/
 │   ├── geometry_helpers.js          # Pure distance calculations
 │   ├── notification_helpers.js      # Player messaging utilities
 │   ├── debug_mode_helper.js         # Debug mode utilities
-│   └── network_helpers.js           # HTTP request wrappers
+│   ├── network_helpers.js           # HTTP request wrappers
+│   └── batch_queue.js               # Generic batch queue utility
 │
 ├── config/
 │   └── (global config only)
 │
 └── sandbox/
     ├── test_proximity_detection.js  # Proximity detection testing (archived)
+    ├── test_working_memory_sync.js  # WM sync testing sandbox
     └── (other temporary test scripts)
 ```
 
@@ -763,6 +772,7 @@ initializeProximityDebugCommands();
 **Purpose**: Reduce network overhead by grouping multiple operations into single HTTP requests.
 
 **Implementation**: Generic, reusable batch queue utility (`scripts/utils/batch_queue.js`) that handles:
+
 - Automatic deduplication (Set-based)
 - Debounced or fixed-delay timers
 - Parallel batch processing
@@ -782,6 +792,7 @@ initializeProximityDebugCommands();
    - **Result**: Multiple villagers entering/leaving range = 1 batch request vs N individual requests
 
 **Benefits**:
+
 - Reduces HTTP connection overhead
 - Prevents backend connection pool exhaustion
 - Cleaner console logs (batch summaries vs individual confirmations)
@@ -814,5 +825,47 @@ router.post("/register", async (req, res) => {
   res.json(result);
 });
 ```
+
+---
+
+## Cache-First Working Memory Pattern
+
+**Decision**: Use `trackedVillagers` cache as the **primary source of truth** for Working Memory, with DynamicProperties as a backup persistence layer.
+
+**Old Approach (DP-First)**:
+
+- DynamicProperties = source of truth
+- Required entity to be loaded (in range) for all operations
+- Every read/write hit the entity API
+- Slow and proximity-dependent
+
+**New Approach (Cache-First)**:
+
+- `trackedVillagers` Map = **source of truth** (fast, in-memory)
+- DynamicProperties = persistence layer (restore after script reload)
+- Database = remote backup (periodic sync)
+
+**Write Flow**:
+
+1. Write to cache (immediate, no entity needed!)
+2. Mark `needsDPSync=true` (DPs need updating)
+3. Mark `needsDBSync=true` (DB needs updating)
+4. When entity in range → sync cache to DPs (automatic)
+5. Sync loop → sync cache to DB (automatic, every 1s)
+
+**Benefits**:
+
+- ✅ Modify Working Memory from **ANY distance** (no entity required!)
+- ✅ Faster calculations (memory access vs entity API)
+- ✅ AI logic works without proximity constraints
+- ✅ DPs become "save file" not "runtime storage"
+
+**Implementation**:
+
+- `scripts/layers/layer4_working_memory/helpers/working_memory_chache.js` - Cache operations
+- `scripts/systems/villager_lifecycle/lifecycle_state.js` - `trackedVillagers` structure includes `workingMemory` metadata
+- `scripts/systems/debug/debug_modals/working_memory_modal.js` - Proximity-independent debug UI
+
+**Auto-Recovery**: When script reloads, auto-recovery parses DB vectors (PostgreSQL returns as strings) and populates cache with `needsDPSync=true, needsDBSync=false`, ensuring DPs sync when villagers come in range but avoiding redundant DB syncs.
 
 ---
