@@ -1,16 +1,24 @@
 # Layer 4: Working Memory & Saliency Filter
 
+> **Implementation Status:** 🟢 PARTIALLY IMPLEMENTED - Working Memory fully implemented (Cache-First pattern). Saliency Filter planned for future.
+
 ## 1. Purpose
 
 Working Memory is the villager's "Short-Term Notepad." It tracks active context in real-time. The Saliency Filter acts as the "Gatekeeper," deciding which parts of Working Memory are important enough to be saved to the Long-Term Database (Layer 5).
 
 ## 2. Working Memory Components (The Active State)
 
-This object lives in the villager's RAM/Dynamic Properties and updates every tick. It tracks:
+This object lives in the **in-memory cache (`trackedVillagers` Map)** and is backed up to **DynamicProperties** for persistence. Updates are proximity-independent and synced to the database periodically. It tracks:
 
 - **Current Episode Label:** (e.g., "Playing Spleef with Steve")
 - **Active Focus:** The specific entity or block the villager is currently interacting with.
 - **Flashbulb Events:** High-intensity "shocks" (like being hit) that remain "fresh" even if they aren't part of a pattern.
+- **Current Mood Vector:** 5-axis [C, V, I, S, X] emotional state
+
+**Storage Hierarchy:**
+1. **`trackedVillagers` Map** (PRIMARY) - In-memory, O(1) access, no proximity constraints
+2. **DynamicProperties** (BACKUP) - Persists across script reloads
+3. **PostgreSQL** (REMOTE BACKUP) - Authoritative source, syncs every 1s
 
 ## 3. The Decay System (Volatility)
 

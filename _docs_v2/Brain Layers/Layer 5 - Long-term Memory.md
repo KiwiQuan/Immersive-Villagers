@@ -1,5 +1,7 @@
 # Layer 5: Long-Term Memory (The Personal Archive)
 
+> **Implementation Status:** 🟢 PARTIALLY IMPLEMENTED - Database schema and Working Memory storage implemented. Episode storage and semantic querying planned for future.
+
 ## 1. Purpose
 
 This layer manages the PostgreSQL database to ensure subjective persistence. Every villager possesses their own unique history and opinions. If a player interacts with Villager A, Villager B remains unaware unless the information is shared through a "Gossip" event later.

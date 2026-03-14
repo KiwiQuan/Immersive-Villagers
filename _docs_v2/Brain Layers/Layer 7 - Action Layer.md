@@ -1,5 +1,7 @@
 # Layer 7: The Action Layer (The Body)
 
+> **Implementation Status:** 🟡 PLANNED - This doc describes future architecture. Not yet implemented.
+
 ## 1. Purpose
 
 The Action Layer is the bridge between the high-level reasoning of Layer 6 (Language Cortex) and the low-level Minecraft Bedrock Script API. It acts as a **Command Buffer**, translating keywords into physical movement, speech, and animation.

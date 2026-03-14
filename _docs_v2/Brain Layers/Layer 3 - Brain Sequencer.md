@@ -1,5 +1,7 @@
 # Layer 3: Brain Sequencer (Temporal Learning)
 
+> **Implementation Status:** 🟡 PLANNED - This doc describes future architecture. Not yet implemented.
+
 ## 1. Purpose
 
 The Sequencer translates high-frequency math (vectors) from the Perception layer into a chronological "Story" of activities. It uses a two-tier buffer system to move from raw data to semantic labels (Sub-Concepts) and finally to complex patterns (Macro-Concepts).

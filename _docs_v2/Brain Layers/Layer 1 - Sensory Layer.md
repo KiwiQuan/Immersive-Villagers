@@ -1,5 +1,7 @@
 # 📡 Layer 1: Sensory Input (The Retina)
 
+> **Implementation Status:** 🟡 PLANNED - This doc describes future architecture. Not yet implemented.
+
 **Purpose:** This layer acts as the interface between the Minecraft Script API and the AI Brain. It filters the massive stream of game events into a curated, prioritized "Retina Packet" that only contains what a specific villager could reasonably perceive.
 
 ---

@@ -1,5 +1,7 @@
 # Layer 2: Perception (The Semantic Vectorizer)
 
+> **Implementation Status:** 🟡 PLANNED - This doc describes future architecture. Not yet implemented.
+
 ## 1. Purpose
 
 Converts raw game data and locations into semantic vectors. Behavior depends on **AI_MODE**:

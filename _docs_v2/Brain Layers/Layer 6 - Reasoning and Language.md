@@ -1,5 +1,7 @@
 # Layer 6: Language Cortex (The Executive Hub)
 
+> **Implementation Status:** 🟡 PLANNED - This doc describes future architecture. Not yet implemented.
+
 ## 1. Purpose
 
 Layer 6 is the Prefrontal Cortex of the villager. It translates mathematical vectors and memory into "Intent." It is responsible for decision-making, social interaction, and high-level goal synthesis. It turns a "Chatbot" into an "Agent."

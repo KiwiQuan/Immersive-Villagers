@@ -7,7 +7,6 @@ DROP TABLE IF EXISTS pattern_observations;
 DROP TABLE IF EXISTS villager_world_map;
 DROP TABLE IF EXISTS structure_blueprints;
 DROP TABLE IF EXISTS structure_templates;
-DROP TABLE IF EXISTS vector_cache;
 DROP TABLE IF EXISTS working_memory;
 DROP TABLE IF EXISTS relationships;
 DROP TABLE IF EXISTS episodes;
