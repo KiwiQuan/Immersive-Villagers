@@ -13,19 +13,22 @@
 - Custom middleware for AI model orchestration
 - Async error handling built-in
 - Industry standard for REST APIs
+- Runs on Node.js v24 (stable, optimized V8 engine)
 
 ### Database
-**PostgreSQL + node-postgres (pg)**
-- Relational database with advanced features
+**PostgreSQL 18 + node-postgres (pg)**
+- Latest PostgreSQL with performance improvements
 - Connection pooling via `pg.Pool`
 - Parameterized queries for SQL injection protection
 - Subjective memory isolation per villager
+- Advanced JSON/JSONB operators for metadata storage
 
 **pgvector Extension**
 - Vector similarity search using cosine distance
 - IVFFlat indexes for 5D and 384D embeddings
 - Dual vector support (MONOLITHIC + MICROSERVICES modes)
 - Native SQL integration (no ORM friction)
+- Optimized performance in PostgreSQL 18
 
 ### AI/ML Models
 **@xenova/transformers**
@@ -169,11 +172,11 @@
 ## Production Deployment
 
 ### Runtime
-- **Node.js**: v22+ (ES modules, async/await)
+- **Node.js**: v24 (ES modules, async/await, native `--env-file` support)
 - **Process Manager**: PM2 (clustering, auto-restart)
 
 ### Infrastructure Requirements
-- PostgreSQL 16+ with pgvector extension
+- PostgreSQL 18 with pgvector extension
 - Redis 7+ for BullMQ
 - llama.cpp server (local or remote)
 - Bedrock Dedicated Server (BDS 1.26+)
@@ -211,27 +214,57 @@ NODE_ENV=production
 ## Installation Commands
 
 ```bash
-# Core dependencies
-npm install express pg @xenova/transformers bullmq ioredis
+# Core dependencies (latest versions)
+npm install express@latest pg@latest @xenova/transformers@latest bullmq@latest ioredis@latest
 
 # Validation & logging
-npm install joi pino pino-pretty
+npm install joi@latest pino@latest pino-pretty@latest
 
 # Configuration & HTTP
-npm install dotenv axios
+npm install dotenv@latest axios@latest
 
 # API documentation
-npm install swagger-jsdoc swagger-ui-express
+npm install swagger-jsdoc@latest swagger-ui-express@latest
 
 # Error monitoring
-npm install @sentry/node @sentry/profiling-node
+npm install @sentry/node@latest @sentry/profiling-node@latest
 
 # Development dependencies
-npm install -D vitest supertest node-pg-migrate
+npm install -D vitest@latest supertest@latest node-pg-migrate@latest
 
 # Global process manager
-npm install -g pm2
+npm install -g pm2@latest
 ```
+
+### Current Stack Versions (as of March 2026)
+- **Express**: v5.1.0
+- **pg (node-postgres)**: v8.14.1
+- **@xenova/transformers**: Latest stable
+- **BullMQ**: v5.x
+- **ioredis**: v5.x
+- **Joi**: v17.x
+- **Pino**: v9.6.0
+- **PM2**: v5.x
+- **Vitest**: v3.1.1
+- **Sentry**: v8.x
+
+---
+
+## Version-Specific Benefits
+
+### Node.js v24
+- **Native `--env-file` support**: No need for dotenv preload in scripts
+- **Performance**: ~15% faster V8 engine compared to v22
+- **ES modules**: First-class support with better tree-shaking
+- **Async hooks**: Improved tracing for debugging AI pipelines
+- **Security**: Latest security patches and TLS 1.3
+
+### PostgreSQL 18
+- **Query performance**: Improved query planner for complex vector operations
+- **Parallel queries**: Better multi-core utilization for large vector searches
+- **JSON performance**: Faster JSONB operations (used in structure templates)
+- **Vacuum improvements**: Better performance for high-write workloads (episodes table)
+- **pgvector compatibility**: Fully tested with latest pgvector extension
 
 ---
 
