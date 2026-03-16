@@ -2,5 +2,5 @@
 alwaysApply: false
 ---
 
-use context7 MCP to make sure the documentation is using up to date information, and
+use context7 MCP to make sure the documentation is using up to date relevant information, and
 make sure to use Senior level coding patterns and principles (DRY, Separation of concerns, Single Responsibility principle, KISS, etc.) make sure the logic is not over-engineered and is industry standard. make sure the architecture is scalable
