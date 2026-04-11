@@ -1119,10 +1119,9 @@ Response → Return to requesting layer
    - TraitModifier: 0.8 (friendly behavior pattern)
    - NewTrust: 0.45 + (0.9 * 0.8) = 1.17 → Capped at 1.0
    ↓
-   UPDATE relationships SET trust_score = 1.0, interaction_count = interaction_count + 1 
-   WHERE villager_id = 'villager-456' AND actor_id = 'player-steve'
+   Update relationships table (trust_score, interaction_count)
    ↓
-   INSERT INTO episodes (villager_id, actor_id, semantic_vector_manual, semantic_vector_minilm, summary_text, duration, event_count, timestamp)
+   Insert episode record with summary and vectors
 
 4. [Layer 6: Language Cortex] (Next Interaction)
    Query Layer 5 → Retrieve updated trust_score (1.0)
@@ -1196,20 +1195,12 @@ Response → Return to requesting layer
    │ → LLM: "Spleef"     │ → Cache label       │
    └─────────────────────┴─────────────────────┘
    ↓
-   Store in concepts table:
-   INSERT INTO concepts (name, semantic_vector_manual, semantic_vector_minilm, discovery_count)
-   VALUES ('Spleef', VECTOR[0.3, 0.5, 0.7, 0.8, 0.4], VECTOR[0.12, 0.34, ...], 1)
+   Store in concepts table with semantic vectors
    ↓
-   Store discovery record:
-   INSERT INTO villager_discoveries (villager_id, concept_id, discovered_at, discovery_method)
-   VALUES ('villager-456', 12, 1709480325000, 'observation')
+   Record discovery in villager_discoveries table
 
 5. [Layer 5: Long-Term Memory]
-   Write episode with new concept:
-   INSERT INTO episodes (villager_id, actor_id, semantic_vector_manual, semantic_vector_minilm, summary_text, duration, event_count, timestamp)
-   VALUES ('villager-456', 'player-steve', VECTOR[...], VECTOR[...], 'Played Spleef game', 300000, 25, 1709480325000)
-   ↓
-   Discovery already recorded in step 6 (villager_discoveries table)
+   Write episode record with new concept reference and summary
 
 6. [Future Recognition]
    Player plays Spleef again (weeks later)
@@ -1234,51 +1225,16 @@ Response → Return to requesting layer
 ### A. Cache-First Pattern (Storage Hierarchy)
 
 **Write Flow:**
-
-```
-Component needs to update state
-    ↓
-[Update In-Memory Cache] → trackedVillagers.set(v_id, newState)
-    ↓
-[Set Sync Flags] → needsDPSync = true, needsDBSync = true
-    ↓
-[Async Sync Handlers]
-    ↓
-┌─────────────────────┬─────────────────────┐
-│  DynamicProperties  │  PostgreSQL Sync    │
-│  (In-Range Only)    │  (Always)           │
-├─────────────────────┼─────────────────────┤
-│  If entity nearby:  │  Every 1s:          │
-│  - Write to DPs     │  - Batch pending    │
-│  - Clear needsDPSync│    writes           │
-│                     │  - http.post(...)   │
-│                     │  - Clear needsDBSync│
-└─────────────────────┴─────────────────────┘
-```
+1. Update in-memory cache (`trackedVillagers` Map)
+2. Set sync flags (`needsDPSync`, `needsDBSync`)
+3. Async handlers sync to DynamicProperties (if entity nearby) and PostgreSQL (every 1s)
 
 **Read Flow:**
+1. Check in-memory cache (O(1) access, <1ms)
+2. If missing: Load from DynamicProperties → Populate cache
+3. Background sync from PostgreSQL for authoritative data
 
-```
-Component needs villager state
-    ↓
-[Check In-Memory Cache] → trackedVillagers.get(v_id)
-    ↓ EXISTS
-Return immediately (O(1) access)
-    ↓ MISSING (Script reload or new villager)
-[Load from DynamicProperties] → entity.getDynamicProperty()
-    ↓
-[Populate Cache] → trackedVillagers.set(v_id, loadedState)
-    ↓
-[Background DB Sync] → Fetch authoritative data from PostgreSQL
-    ↓
-[Merge and Update Cache] → Reconcile any differences
-```
-
-**Benefits:**
-- ✅ Proximity-independent state access
-- ✅ <1ms read latency
-- ✅ No "Invalid Entity" errors
-- ✅ Automatic persistence across script reloads
+**Benefits:** Proximity-independent access, no "Invalid Entity" errors, automatic persistence
 
 ---
 
@@ -1286,96 +1242,29 @@ Return immediately (O(1) access)
 
 **Trigger:** Player executes `/scriptevent ai:mode <monolithic|microservices>`
 
-**Processing Pipeline:**
-
-```
-Command Received
-    ↓
-[Validate Mode] → "monolithic" or "microservices"?
-    ↓ VALID
-[Backend Update] → http.post('/api/config/ai-mode', { mode })
-    ↓
-[Global Config Update] → Node.js updates AI_MODE environment variable
-    ↓
-[Layer Notification] → Broadcast mode change to all active layers
-    ↓
-Layer 2: Switch vector generation method
-Layer 3: Enable/disable Fast Intent Router
-Layer 6: Adjust prompt structure
-    ↓
-[Confirmation] → world.sendMessage("AI Mode: MICROSERVICES")
-```
-
-**No Server Restart Required**
-
-**Mode Switch Latency:** <100ms
+**Effect:**
+- Backend updates AI_MODE environment variable
+- Layer 2 switches embedding strategy (5D manual vs. 384D MiniLM)
+- Layer 3 switches intent routing (DB lookup vs. DistilBERT)
+- Layer 6 adjusts LLM prompt structure
+- Hot-swap at runtime, no restart required (~100ms latency)
 
 ---
 
 ### C. Instinct Fallback System (Error Resilience)
 
-**Trigger:** Backend unresponsive, LLM timeout, or network failure
+**Trigger:** Backend unresponsive, LLM timeout, or network failure (>5s)
 
-**Fallback Logic:**
+**Fallback Behaviors by Priority:**
+- **P0 (Critical):** Immediate FLEE from danger
+- **P1 (Social):** IDLE + STARE at player (active listening)
+- **P2 (Routine):** Continue last successful action or wander
 
-```
-Layer 6 Request to Backend
-    ↓
-[Timeout Check] → Response within 5 seconds?
-    ↓ NO (Network Failure)
-[Instinct Override] → Load hardcoded fallback behavior
-    ↓
-Priority-Based Fallback:
-    ↓
-┌─────────────┬─────────────┬─────────────┐
-│  CRITICAL   │   SOCIAL    │   ROUTINE   │
-│  (P0)       │   (P1)      │   (P2)      │
-├─────────────┼─────────────┼─────────────┤
-│ → FLEE      │ → IDLE +    │ → Continue  │
-│             │   STARE     │   last task │
-└─────────────┴─────────────┴─────────────┘
-    ↓
-Execute fallback in Layer 7
-    ↓
-[Background Retry] → Attempt backend reconnection every 10s
-```
-
-**Fallback Behaviors:**
-- P0 (Critical): Immediate FLEE from danger
-- P1 (Social): IDLE + STARE at player (active listening)
-- P2 (Routine): Continue last successful action or wander
+**Recovery:** Background retry every 10s until backend reconnects
 
 ---
 
-## 5. Timing & Performance Budget
-
-### Fast Gear (Bedrock Script API)
-
-| Layer | Execution Frequency | Budget per Villager | Operation |
-|-------|---------------------|---------------------|-----------|
-| **Layer 1** | Every 10 ticks (500ms) | <5ms | Event filtering, LOS checks |
-| **Layer 2** | Per event (reactive) | <1ms (MONO) / <20ms (MICRO) | Vector calculation |
-| **Layer 3** | Every 1-2 seconds | <5ms | Moving average, pattern detection |
-| **Layer 4** | Every 1 second | <2ms | Cache update, decay calculation |
-
-**Total Fast Gear Budget:** <15ms per villager per second (0.03% of server tick time)
-
-### Slow Gear (Node.js Backend)
-
-| Layer | Execution Frequency | Budget | Operation |
-|-------|---------------------|--------|-----------|
-| **Layer 5** | On-demand (async) | <50ms | Database query/write |
-| **Layer 6** | Every 2-5 seconds | 1-4s | LLM inference (mode dependent) |
-| **Scheduler** | Continuous | <10ms | Queue management, batching |
-
-**Concurrency Limits:**
-- Max concurrent LLM calls: 1 (configurable)
-- Max DB connections: 10 (pooled)
-- Max batched requests: 5 villagers per LLM call
-
----
-
-## 6. Debug Modal Architecture
+## 5. Debug Modal Architecture
 
 ### Modal Structure (Recommended UI Layout)
 
@@ -1400,48 +1289,13 @@ Execute fallback in Layer 7
 ### Panel 1: Working Memory (Layer 4) — PRIMARY FOCUS
 
 **Data to Expose:**
+- Current episode label
+- Active focus (entity/location)
+- Emotional state (mood vector + derived label)
+- Flashbulb events (recent shocks with decay timers)
+- Sync status (cache, DynamicProperties, database)
 
-```javascript
-{
-  // Current State
-  currentEpisode: "Mining with Steve",
-  activeFocus: { type: "entity", id: "steve", distance: 5.2 },
-  
-  // Emotional State
-  currentMoodVector: { C: 0.7, V: 0.8, I: 0.4, S: 0.9, X: 0.2 },
-  moodLabel: "Happy and Constructive",  // Derived from vector
-  
-  // Flashbulb Events (Recent Shocks)
-  flashbulbEvents: [
-    {
-      type: "entityHurt",
-      damage: 3,
-      source: "zombie",
-      timestamp: "2m ago",
-      decayTime: "8m remaining"
-    }
-  ],
-  
-  // Sync Status
-  lastCacheUpdate: "0.5s ago",
-  lastDPSync: "5s ago",
-  lastDBSync: "1s ago",
-  pendingWrites: 2
-}
-```
-
-**Database Queries for UI:**
-
-```sql
--- Get Working Memory state from database (backup/verification)
-SELECT wm.current_mood_manual, wm.current_mood_minilm, wm.current_focus,
-       wm.shock_state, wm.last_update
-FROM working_memory wm
-WHERE wm.villager_id = 'villager-456';
-
--- Note: Primary source is in-memory cache (trackedVillagers Map)
--- Database query only used for verification or after script reload
-```
+**Data Source:** Primary source is in-memory cache (`trackedVillagers` Map). Database used for verification or after script reload.
 
 **UI Representation:**
 - Current episode as large heading
@@ -1454,119 +1308,11 @@ WHERE wm.villager_id = 'villager-456';
 ### Panel 2: Long-Term Memory (Layer 5) — PRIMARY FOCUS
 
 **Data to Expose:**
-
-```javascript
-{
-  // Relationship Data
-  relationships: [
-    {
-      actorID: "player-steve",
-      trustScore: 0.85,
-      interactionCount: 47,
-      lastInteraction: "2m ago",
-      trustLevel: "Loyal"  // Derived from score
-    },
-    {
-      actorID: "player-alex",
-      trustScore: -0.3,
-      interactionCount: 3,
-      lastInteraction: "2d ago",
-      trustLevel: "Distrustful"
-    }
-  ],
-  
-  // Episode History
-  recentEpisodes: [
-    {
-      label: "Mining",
-      duration: "5m 23s",
-      avgMood: { C: 0.7, V: 0.8, I: 0.4, S: 0.9, X: 0.2 },
-      actor: "Steve",
-      timestamp: "2m ago"
-    },
-    {
-      label: "Trading",
-      duration: "45s",
-      avgMood: { C: 0.0, V: 0.6, I: 0.1, S: 0.8, X: 0.0 },
-      actor: "Steve",
-      timestamp: "1h ago"
-    }
-  ],
-  
-  // Learned Concepts
-  knownConcepts: [
-    { label: "Spleef", discoveredAt: "3d ago", usageCount: 7 },
-    { label: "Mining", discoveredAt: "7d ago", usageCount: 34 },
-    { label: "Building", discoveredAt: "5d ago", usageCount: 12 }
-  ],
-  
-  // Learned Structures
-  learnedStructures: [
-    {
-      templateID: 5,
-      label: "Oak Pillar",
-      patternHash: "oak:0:0:0|oak:0:1:0|oak:0:2:0",
-      dimensions: { x: 1, y: 3, z: 1 },
-      observationCount: 2,
-      createdBy: "player-steve"
-    }
-  ],
-  
-  // Known Structure Locations (Subjective World Map)
-  knownLocations: [
-    {
-      structureID: 3,
-      anchorCoords: [100, 64, -200],
-      confidence: 1.0,
-      lastObserved: "5m ago"
-    }
-  ]
-}
-```
-
-**Database Queries for UI:**
-
-```sql
--- Get all relationships for villager
-SELECT r.actor_id, r.trust_score, r.interaction_count, r.last_interaction
-FROM relationships r
-WHERE r.villager_id = 'villager-456'
-ORDER BY r.trust_score DESC;
-
--- Get recent episodes with concept names
-SELECT e.id, c.name AS concept_name, e.semantic_vector_manual, e.summary_text, 
-       e.duration, e.actor_id, e.timestamp
-FROM episodes e
-LEFT JOIN concepts c ON e.semantic_vector_manual <=> c.semantic_vector_manual < 0.2
-WHERE e.villager_id = 'villager-456'
-ORDER BY e.timestamp DESC
-LIMIT 20;
-
--- Get discovered concepts with usage stats
-SELECT c.name, vd.discovered_at, vd.discovery_method, c.discovery_count
-FROM villager_discoveries vd
-JOIN concepts c ON vd.concept_id = c.concept_id
-WHERE vd.villager_id = 'villager-456'
-ORDER BY vd.discovered_at DESC;
-
--- Get learned structures
-SELECT st.id, st.label, st.pattern_hash, st.dimensions, 
-       st.observation_count, st.created_by
-FROM structure_templates st
-WHERE st.created_by = 'villager-456' OR EXISTS (
-  SELECT 1 FROM pattern_observations po 
-  WHERE po.villager_id = 'villager-456' AND po.pattern_hash = st.pattern_hash
-)
-ORDER BY st.observation_count DESC;
-
--- Get known structure locations
-SELECT vwm.structure_id, sb.name, vwm.anchor_x, vwm.anchor_y, vwm.anchor_z,
-       vwm.confidence, vwm.last_observed
-FROM villager_world_map vwm
-LEFT JOIN structure_blueprints sb ON vwm.structure_id = sb.id
-WHERE vwm.villager_id = 'villager-456'
-ORDER BY vwm.last_observed DESC;
-```
+- Relationships (trust scores, interaction counts, timestamps)
+- Episode history (recent interactions with summaries)
+- Learned concepts (discovered patterns and labels)
+- Learned structures (observed building patterns)
+- Known structure locations (subjective world map)
 
 **UI Representation:**
 - Relationship list with trust score bars (color-coded by trust level)
@@ -1580,57 +1326,10 @@ ORDER BY vwm.last_observed DESC;
 ### Panel 3: Current Task (Layer 7)
 
 **Data to Expose:**
-
-```javascript
-{
-  // Active Task
-  currentAction: "approach",
-  targetEntity: "Steve",
-  taskStatus: "in_progress",
-  startTime: "5s ago",
-  estimatedCompletion: "3s",
-  
-  // Pathfinding (if moving)
-  pathfindingStatus: {
-    isMoving: true,
-    currentPath: [[100, 64, -200], [101, 64, -199], ...],
-    distanceToTarget: 8.3,
-    pathBlocked: false
-  },
-  
-  // Building (if active)
-  buildingStatus: {
-    isBuilding: false,
-    pattern: null,
-    progress: null
-  },
-  
-  // Last 5 Actions
-  actionHistory: [
-    { action: "speak", text: "Hello!", timestamp: "10s ago", status: "completed" },
-    { action: "animate", id: "wave", timestamp: "12s ago", status: "completed" },
-    { action: "approach", target: "Steve", timestamp: "30s ago", status: "completed" }
-  ]
-}
-```
-
-**Database Queries for UI:**
-
-```sql
--- Get active build tasks
-SELECT bt.id, bt.template_id, st.label AS template_name,
-       bt.anchor_x, bt.anchor_y, bt.anchor_z,
-       bt.status, bt.current_step, bt.total_steps,
-       bt.trigger_source, bt.created_at, bt.started_at
-FROM build_tasks bt
-LEFT JOIN structure_templates st ON bt.template_id = st.id
-WHERE bt.villager_id = 'villager-456' AND bt.status = 'in_progress'
-ORDER BY bt.created_at DESC
-LIMIT 1;
-
--- Note: Task state (pathfinding, current action) stored in in-memory cache only
--- Use cache API for real-time task status, not database
-```
+- Current action (type, target, status, timing)
+- Pathfinding status (movement, path, distance)
+- Building status (active pattern, progress)
+- Action history (last 5 completed actions)
 
 **UI Representation:**
 - Current action as status badge with progress indicator
@@ -1656,7 +1355,7 @@ Visual indicators for each layer's current state:
 
 ---
 
-## 7. Data Flow Summary Diagrams
+## 6. Data Flow Summary Diagrams
 
 ### Complete Event-to-Action Flow (Integrated View)
 
@@ -1763,91 +1462,7 @@ Visual indicators for each layer's current state:
 
 ---
 
-## 8. Key Architectural Principles Applied
-
-### Single Responsibility Principle (SRP)
-- Each layer has ONE clear purpose
-- Layer 1: Filtering only
-- Layer 2: Vectorization only
-- Layer 3: Pattern detection only
-- Layer 4: Short-term state only
-- Layer 5: Persistence only
-- Layer 6: Reasoning only
-- Layer 7: Execution only
-
-### Separation of Concerns (SoC)
-- **Fast Gear** (Layers 1-4): High-frequency, low-latency operations
-- **Slow Gear** (Layers 5-7): Low-frequency, high-latency operations
-- **Storage Tiers:** Cache → DynamicProperties → PostgreSQL (each with distinct purpose)
-
-### DRY (Don't Repeat Yourself)
-- Shared vector calculation functions across modes
-- Unified data flow format (JSON packets between layers)
-- Single source of truth (PostgreSQL) with caching layers
-
-### KISS (Keep It Simple, Stupid)
-- Unidirectional data flow (no circular dependencies)
-- Clear input/output contracts for each layer
-- AI mode branching isolated to specific processing steps (no system-wide conditionals)
-
-### Scalability Considerations
-- **Horizontal Scaling:** Each villager's brain is independent (no shared state)
-- **Batching:** Scheduler can process multiple villagers' requests in single LLM call
-- **Async I/O:** All network and database operations non-blocking
-- **Cache-First:** In-memory cache eliminates database bottleneck
-- **Mode Switching:** MICROSERVICES mode reduces LLM load by 60%
-
----
-
-## 9. Error Handling & Edge Cases
-
-### Network Failure
-- **Detection:** Backend request timeout (>5s)
-- **Response:** Instinct fallback based on priority
-- **Recovery:** Background retry every 10s
-
-### Invalid Entity References
-- **Prevention:** Never store Entity objects, only entity.id
-- **Resolution:** Always fetch fresh entity via `world.getEntity(id)`
-
-### Database Write Failure
-- **Detection:** HTTP response status !== 200
-- **Response:** Keep data in cache, retry on next sync cycle
-- **Escalation:** After 3 failures, log to console and clear needsDBSync flag
-
-### LLM Timeout or Malformed Response
-- **Detection:** No response within 5s or JSON parse error
-- **Response:** Use last successful NarrativePacket or instinct fallback
-- **Logging:** Send error to backend for diagnostics
-
-### Memory Overflow
-- **Detection:** trackedVillagers Map size > 100 villagers
-- **Response:** Evict least-recently-updated villagers
-- **Persistence:** Ensure DynamicProperties sync before eviction
-
----
-
-## 10. Future Enhancements
-
-### Advanced Pattern Recognition
-- Multi-player collaborative patterns (team building, group mining)
-- Temporal patterns (daily routines, seasonal behavior)
-
-### Emotional State Evolution
-- Mood persistence across sessions
-- Long-term personality drift based on experiences
-
-### Gossip System
-- Villagers share learned concepts with each other
-- Reputation propagation (if Steve is mean to Villager A, Villager B hears about it)
-
-### Structure Creativity
-- Recombine learned patterns into novel structures
-- Style preferences (villager prefers stone over wood)
-
----
-
-## 11. Glossary
+## 7. Glossary
 
 **Retina Packet:** JSON object containing filtered sensory input from Layer 1  
 **Semantic Frame:** Vector representation of an event from Layer 2  
