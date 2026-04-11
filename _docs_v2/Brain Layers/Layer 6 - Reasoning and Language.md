@@ -73,7 +73,9 @@ Based on this, generate a JSON response:
 ```
 
 **Token Count:** ~400-500 tokens  
-**Inference Time:** 2-4 seconds
+**Inference Time:**
+- HTTP: 2-4 seconds (complete response)
+- WebSocket (EXPERIMENTAL): 0.3s first token, 2-4s total (perceived faster)
 
 ---
 
@@ -95,12 +97,15 @@ Respond naturally:
 ```
 
 **Token Count:** ~200-300 tokens  
-**Inference Time:** 1-2 seconds
+**Inference Time:**
+- HTTP: 1-2 seconds (complete response)
+- WebSocket (EXPERIMENTAL): 0.2s first token, 1-2s total (perceived faster)
 
 **Why Shorter:**
 - Pre-summarized by T5-small (no raw vectors)
 - Intent already classified by DistilBERT (LLM only handles dialogue)
 - No need for action selection (already determined by Fast Intent Router)
+- WebSocket streaming provides faster perceived response time
 
 ## 4. The Response Format (The "Internal Monologue")
 
@@ -125,7 +130,119 @@ If Layer 3 presents an "Unknown Pattern," Layer 6 handles the "Aha!" moment:
 2. **Naming:** If it’s totally new, it creates a name (e.g., "The Block-Dance").
 3. **Storage:** Commands Layer 5 to save this new [C, V, I, S, X] signature to the villager's private database.
 
-## 7. Implementation Rules for AI Agent
+## 7. Network Transport (Hybrid WebSocket + HTTP)
+
+> ⚠️ **EXPERIMENTAL:** WebSocket support in `@minecraft/server-net` is a new 2026 feature. API stability not yet fully validated.
+
+Layer 6 uses a hybrid transport strategy for LLM communication:
+
+### WebSocket Transport (Preferred for LLM Streaming)
+
+**When to Use:**
+- LLM inference requests (dialogue generation, reasoning)
+- Real-time response streaming (progressive token delivery)
+- When connection is active and stable
+
+**Benefits:**
+- **Faster Perceived Response:** First token arrives in 0.2-0.3s (vs. 1-4s wait for HTTP)
+- **Progressive Display:** Can show partial responses as they generate
+- **Bidirectional:** Backend can push updates without game request
+
+**Implementation Pattern:**
+
+```javascript
+// Game-side (Layer 6 inference request)
+const ws = websocket.connect("ws://localhost:3000/llm-stream");
+
+ws.send(JSON.stringify({
+  type: "llm_inference",
+  v_id: "villager-456",
+  prompt: contextPacket,
+  stream: true
+}));
+
+// Listen for streaming tokens
+ws.afterEvents.message.subscribe((event) => {
+  const data = JSON.parse(event.message);
+  if (data.type === "token") {
+    // Accumulate tokens: response += data.token
+  } else if (data.type === "complete") {
+    // Parse final NarrativePacket, send to Layer 7
+  }
+});
+```
+
+**Backend-side (Node.js):**
+
+```javascript
+// WebSocket server for streaming LLM responses
+wss.on('connection', (ws) => {
+  ws.on('message', async (message) => {
+    const { v_id, prompt, stream } = JSON.parse(message);
+    
+    // Stream tokens as they're generated
+    for await (const token of llamaStream(prompt)) {
+      ws.send(JSON.stringify({ type: "token", token }));
+    }
+    
+    ws.send(JSON.stringify({ type: "complete", narrative: finalPacket }));
+  });
+});
+```
+
+**Limitations:**
+- No built-in reconnection (must implement exponential backoff)
+- No automatic message queuing (buffer failed sends manually)
+- Connection state must be monitored via `ws.isOpen`
+
+---
+
+### HTTP Transport (Fallback for Reliability)
+
+**When to Use:**
+- WebSocket unavailable or connection failed
+- Large payload requests (>64KB)
+- Critical operations requiring guaranteed delivery
+- Database operations (Layer 5)
+
+**Implementation Pattern:**
+
+```javascript
+// Game-side (Layer 6 inference request via HTTP)
+const response = await http.post('/api/llm/infer', {
+  v_id: "villager-456",
+  prompt: contextPacket
+});
+
+const narrativePacket = JSON.parse(response.body);
+// Send to Layer 7
+```
+
+**Performance:**
+- Full response after 1-4 seconds (no streaming)
+- More reliable for critical operations
+- Simpler error handling
+
+---
+
+### Transport Selection Logic
+
+```javascript
+function requestLLMInference(v_id, contextPacket) {
+  // Prefer WebSocket if available
+  if (wsConnection && wsConnection.isOpen) {
+    return requestViaWebSocket(v_id, contextPacket);
+  }
+  
+  // Fallback to HTTP
+  console.warn(`[Layer 6] WebSocket unavailable, using HTTP fallback`);
+  return requestViaHTTP(v_id, contextPacket);
+}
+```
+
+---
+
+## 8. Implementation Rules for AI Agent
 
 - **Async Processing:** LLM calls are slow. The villager must continue its last Layer 7 action (like walking or idling) while waiting for the LLM to return a result.
 - **Token Efficiency:** Always use the "Summarization" function to keep the "History" section of the prompt short.

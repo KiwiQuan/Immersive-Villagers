@@ -28,6 +28,36 @@ Data flows through three persistence layers with decreasing access frequency:
 2. **DynamicProperties:** Backup persistence for script reloads, write-only from cache
 3. **PostgreSQL:** Authoritative source, synced periodically (1s intervals)
 
+### Network Transport Layer (Hybrid Approach)
+
+> ⚠️ **EXPERIMENTAL:** WebSocket support in `@minecraft/server-net` is a new 2026 feature. API stability and real-world performance are not yet fully validated. HTTP remains the recommended fallback for critical operations.
+
+The system uses a hybrid networking approach, selecting the optimal transport based on operation type:
+
+**HTTP (`@minecraft/server-net.http`):**
+- One-off requests (query, create, update)
+- Database operations (writes, complex queries)
+- Large payloads (>64KB)
+- Fallback transport when WebSocket unavailable
+
+**WebSocket (`@minecraft/server-net.websocket`) - EXPERIMENTAL:**
+- Real-time bidirectional communication
+- LLM response streaming (progressive token delivery)
+- Backend-initiated push notifications (Working Memory updates)
+- High-frequency updates (live state sync)
+
+**Transport Selection Rules:**
+- **Layer 2 (Perception):** HTTP for MiniLM embedding requests (one-off)
+- **Layer 5 (Long-Term Memory):** HTTP for database operations (reliability priority)
+- **Layer 6 (Language Cortex):** WebSocket for LLM streaming (when available), HTTP fallback
+- **Working Memory Sync:** WebSocket for backend push, HTTP for game-initiated writes
+
+**WebSocket Limitations (Manual Implementation Required):**
+- No built-in reconnection logic (must implement exponential backoff)
+- No automatic message queuing (must buffer failed sends)
+- No built-in heartbeat/keepalive (must implement manually)
+- Connection state monitoring via `ws.isOpen` and `ws.afterEvents.close`
+
 ---
 
 ## 2. Layer-by-Layer Interaction Flow
@@ -360,6 +390,14 @@ Discard (Stay in Working Memory only)
 - Database sync: Every 1 second (if needsDBSync flag set)
 - DynamicProperties sync: When entity in range + needsDPSync flag
 
+**Backend-Initiated Updates (WebSocket Push) - EXPERIMENTAL:**
+
+The backend can push Working Memory updates to the game via WebSocket:
+- **Trigger:** External analysis, scheduled mood adjustments, cross-villager propagation
+- **Transport:** WebSocket message with `{ type: "memory_update", v_id, data }`
+- **Handler:** Game-side listener updates cache directly (no HTTP request needed)
+- **Use Case:** Synchronized emotional states, gossip system, time-of-day mood shifts
+
 **Debug Modal Data (Primary Focus):**
 - **Current Working Memory State:**
   - Current episode label
@@ -511,7 +549,13 @@ IdentityContext + Working Memory
     ↓
 [Scheduler Queue] → Submit to Brain Scheduler with priority score
     ↓
+[Transport Selection] → WebSocket (streaming) OR HTTP (fallback)
+    ↓
 [LLM Inference] → llama.cpp processes request
+    ↓
+[Response Delivery]
+    ↓ WebSocket: Progressive token streaming (0.1-0.3s first token, then continuous)
+    ↓ HTTP: Complete response after inference (2-4s total)
     ↓
 [Parse Response] → Extract THOUGHT, SPEECH, ACTION from structured output
     ↓
@@ -542,7 +586,9 @@ Based on this, generate a JSON response:
 ```
 
 **Token Count:** 400-500 tokens  
-**Inference Time:** 2-4 seconds
+**Inference Time:** 
+- HTTP: 2-4 seconds (complete response)
+- WebSocket (EXPERIMENTAL): 0.3s first token, 2-4s total (perceived faster via streaming)
 
 ---
 
@@ -557,7 +603,13 @@ IdentityContext + Working Memory
     ↓
 [Scheduler Queue] → Submit with priority score
     ↓
+[Transport Selection] → WebSocket (streaming) OR HTTP (fallback)
+    ↓
 [LLM Inference] → llama.cpp for dialogue only
+    ↓
+[Response Delivery]
+    ↓ WebSocket: Progressive token streaming (0.1-0.2s first token, then continuous)
+    ↓ HTTP: Complete response after inference (1-2s total)
     ↓
 [Parse Response] → Extract SPEECH, THOUGHT
     ↓
@@ -582,12 +634,15 @@ Respond naturally.
 ```
 
 **Token Count:** 200-300 tokens  
-**Inference Time:** 1-2 seconds
+**Inference Time:**
+- HTTP: 1-2 seconds (complete response)
+- WebSocket (EXPERIMENTAL): 0.2s first token, 1-2s total (perceived faster via streaming)
 
 **Why MICROSERVICES is Faster:**
 - Pre-summarized by T5-small (no raw vectors)
 - Intent already classified by DistilBERT
 - Reduced context size (250 tokens vs 500 tokens)
+- WebSocket streaming provides faster perceived response time
 
 ---
 
@@ -616,6 +671,8 @@ Respond naturally.
   - Current prompt sent to LLM
   - Token count
   - Inference time
+  - Transport used (WebSocket/HTTP)
+  - Streaming status (if WebSocket): tokens received, progress percentage
 - **Scheduler State:**
   - Queue depth (pending requests)
   - Current processing priority
@@ -857,6 +914,8 @@ Response → Return to requesting layer
    Package IdentityContext
 
 6. [Layer 6: Language Cortex]
+   Transport: WebSocket (streaming) OR HTTP (fallback)
+   ↓
    ┌─────────────────────┬─────────────────────┐
    │   MONOLITHIC        │   MICROSERVICES     │
    ├─────────────────────┼─────────────────────┤
@@ -864,7 +923,9 @@ Response → Return to requesting layer
    │ - Raw vectors       │ - "Steve greeted"   │
    │ - Trust: 0.75       │ - Trust: 0.75       │
    │ - Personality       │ - Personality       │
-   │ → LLM (2-4s)        │ → LLM (1-2s)        │
+   │ → LLM inference     │ → LLM inference     │
+   │ WS: 0.3s first token│ WS: 0.2s first token│
+   │ HTTP: 2-4s total    │ HTTP: 1-2s total    │
    └─────────────────────┴─────────────────────┘
    ↓
    NarrativePacket:
@@ -884,9 +945,11 @@ Response → Return to requesting layer
    Feedback to Layer 4: Success
 ```
 
-**Total Latency:**
-- MONOLITHIC: ~2.5-4.5 seconds (event → response)
-- MICROSERVICES: ~1.5-2.5 seconds (event → response)
+**Total Latency (event → response):**
+- MONOLITHIC (HTTP): ~2.5-4.5 seconds
+- MONOLITHIC (WebSocket): ~0.3s first token, ~2.5-4.5s complete response
+- MICROSERVICES (HTTP): ~1.5-2.5 seconds
+- MICROSERVICES (WebSocket): ~0.2s first token, ~1.5-2.5s complete response
 
 ---
 
@@ -1352,6 +1415,7 @@ Visual indicators for each layer's current state:
 | **L5** | 🟠 Orange pulse | Database read/write |
 | **L6** | 🔴 Red pulse | LLM inference running |
 | **L7** | 🟢 Green solid | Action executing |
+| **Network** | 🟢 Connected / 🔴 HTTP Only | WebSocket active / HTTP fallback |
 
 ---
 
@@ -1455,10 +1519,12 @@ Visual indicators for each layer's current state:
 **MONOLITHIC Mode:**
 - Fast path (cached concept): 2.5-3s
 - Slow path (new concept): 4-6s
+- WebSocket streaming: First response token at ~0.3s (perceived faster)
 
 **MICROSERVICES Mode:**
 - Fast path (intent bypassed): 0.5-1s
 - Slow path (dialogue needed): 1.5-2.5s
+- WebSocket streaming: First response token at ~0.2s (perceived faster)
 
 ---
 
@@ -1476,10 +1542,13 @@ Visual indicators for each layer's current state:
 **Slow Gear:** Layers 5-7 (low-frequency, Node.js backend)  
 **Memorability Score (M):** Saliency calculation for promotion to LTM  
 **Cosine Similarity:** Vector comparison metric for concept matching  
-**Fast Intent Routing:** MICROSERVICES mode feature for bypassing LLM on simple intents
+**Fast Intent Routing:** MICROSERVICES mode feature for bypassing LLM on simple intents  
+**WebSocket Streaming (EXPERIMENTAL):** Progressive LLM token delivery via `@minecraft/server-net.websocket` for faster perceived responses  
+**Backend Push:** Server-initiated updates to Working Memory via WebSocket (no game request needed)  
+**Transport Selection:** Automatic choice between HTTP and WebSocket based on operation type and connection availability
 
 ---
 
-**Document Version:** 1.0  
+**Document Version:** 1.1 (Added WebSocket hybrid transport)  
 **Last Updated:** March 14, 2026  
 **Related Docs:** `project-overview.md`, `Brain Layers/*.md`

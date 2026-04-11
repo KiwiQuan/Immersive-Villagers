@@ -20,6 +20,52 @@ This object lives in the **in-memory cache (`trackedVillagers` Map)** and is bac
 2. **DynamicProperties** (BACKUP) - Persists across script reloads
 3. **PostgreSQL** (REMOTE BACKUP) - Authoritative source, syncs every 1s
 
+**Bidirectional Sync:**
+- **Game → Backend:** HTTP POST every 1s for database writes
+- **Backend → Game (EXPERIMENTAL):** WebSocket push for real-time Working Memory updates (e.g., synchronized emotional states, time-of-day mood shifts, cross-villager gossip propagation)
+
+## 2.1 Backend Push Notifications (WebSocket) - EXPERIMENTAL
+
+> ⚠️ **EXPERIMENTAL:** WebSocket support in `@minecraft/server-net` is a new 2026 feature.
+
+The backend can push Working Memory updates directly to the game:
+
+**Use Cases:**
+- **Scheduled Mood Adjustments:** Time-of-day emotional shifts (e.g., villagers get tired at night)
+- **Cross-Villager Propagation:** Gossip system where Villager A's knowledge affects Villager B's mood
+- **External Analysis:** Backend detects patterns and updates villager states proactively
+
+**Implementation:**
+
+```javascript
+// Game-side listener for backend push
+ws.afterEvents.message.subscribe((event) => {
+  const update = JSON.parse(event.message);
+  
+  if (update.type === "memory_update") {
+    const cached = trackedVillagers.get(update.v_id);
+    if (cached) {
+      // Merge backend update into cache
+      cached.currentMoodVector = update.newMood;
+      cached.currentEpisode = update.newEpisode;
+      cached.needsDPSync = true;
+    }
+  }
+});
+```
+
+**Backend Example:**
+
+```javascript
+// Push mood update to game
+ws.send(JSON.stringify({
+  type: "memory_update",
+  v_id: "villager-456",
+  newMood: { C: 0.2, V: 0.3, I: 0.1, S: 0.5, X: 0.0 },
+  newEpisode: "Feeling tired as night approaches"
+}));
+```
+
 ## 3. The Decay System (Volatility)
 
 Working Memory is temporary. Data decays based on its "vibe":

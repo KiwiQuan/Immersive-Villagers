@@ -96,6 +96,11 @@ The system uses a **3-tier storage hierarchy:**
 - ✅ Faster queries (memory vs database)
 - ✅ Auto-sync: Cache → DPs (when in range) + PostgreSQL (every 1s)
 
+**Working Memory Sync Pattern:**
+
+- **Write Flow (Game → Backend):** HTTP POST every 1s for database persistence
+- **Push Flow (Backend → Game) - EXPERIMENTAL:** WebSocket push for backend-initiated Working Memory updates (e.g., time-of-day mood shifts, cross-villager gossip)
+
 ### Memory Sweep Query Pattern
 
 When a player enters the Sensory Radius (Layer 1):
@@ -152,10 +157,12 @@ AND anchor_z BETWEEN ? AND ?
 
 ### Async Operations & Performance
 
-- **Non-blocking I/O:** All database operations via Node.js backend using async/await
+- **Transport:** All database operations use **HTTP** (`@minecraft/server-net.http`) for reliability
+- **Non-blocking I/O:** Database requests via Node.js backend using async/await
 - **Batch Writes:** Episode storage and relationship updates batched every 1-2 seconds
 - **Cache Priority:** Read from `trackedVillagers` cache first, fallback to database
 - **Sync Strategy:** Cache dirty flags (`needsDPSync`, `needsDBSync`) trigger periodic syncs
+- **Why HTTP (Not WebSocket):** Database operations require guaranteed delivery; HTTP provides better reliability for writes/queries
 
 ### Vector Operations (Dual Mode Support)
 

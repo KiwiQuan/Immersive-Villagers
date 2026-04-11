@@ -81,9 +81,12 @@ See `_docs/Extra Info/Project_deviations.md` for detailed implementation.
 ## 3. Tech Stack (BDS Optimized)
 
 - **Environment:** Minecraft Bedrock Dedicated Server (BDS).
-- **Networking:** `@minecraft/server-net` for direct, silent HTTP/REST requests to the backend.
-- **Outbound Data:** Script API sends JSON payloads directly to Node.js via `http.post()`.
-- **Inbound Data:** Node.js responds to HTTP requests with data
+- **Networking (Hybrid Approach):** `@minecraft/server-net` provides both HTTP and WebSocket capabilities:
+  - **HTTP (`http.request()`):** One-off requests, database writes/queries, large payloads, fallback transport
+  - **WebSocket (`websocket.connect()`) - EXPERIMENTAL:** Real-time bidirectional communication, LLM response streaming, push notifications, high-frequency updates
+  - **Transport Selection:** Automatically choose optimal transport based on operation type
+- **Outbound Data:** Script API sends JSON payloads to Node.js via HTTP POST or WebSocket send
+- **Inbound Data:** Node.js responds via HTTP responses or pushes data through WebSocket message events
 - **Intelligence:**
   - **LLM:** Local `llama.cpp` for dialogue and complex reasoning
   - **Small Models (MICROSERVICES mode):** `@xenova/transformers` for:
@@ -100,8 +103,8 @@ See `_docs/Extra Info/Project_deviations.md` for detailed implementation.
 ## 4. Key Constraints
 
 - **Performance:** The Minecraft tick cycle is **50ms**. Heavy logic (LLM/DB/Models) runs asynchronously via `@minecraft/server-net` in the "Slow Gear" (every 2-5 seconds).
-  - **MONOLITHIC Mode:** <1ms vectorization, 2-4s LLM inference
-  - **MICROSERVICES Mode:** 15-20ms vectorization, 50-150ms intent classification, 1-2s LLM inference (dialogue only)
+  - **MONOLITHIC Mode:** <1ms vectorization, 2-4s LLM inference (HTTP) or 0.3s first token with WebSocket streaming
+  - **MICROSERVICES Mode:** 15-20ms vectorization, 50-150ms intent classification, 1-2s LLM inference (HTTP) or 0.2s first token with WebSocket streaming
 - **Subjectivity:** Data queries are strictly filtered by **Villager ID**. No shared global knowledge unless passed via "Gossip" or "Teaching."
 - **Reliability:** The AI must fall back to "Instinct" (Hardcoded fallback logic) if the network or LLM is unresponsive.
 - **Persistence:** Persistent world state stored in **PostgreSQL** (source of truth). **In-memory cache** for runtime performance. **`DynamicProperties`** for backup persistence (write-only storage of data ).
