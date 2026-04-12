@@ -97,12 +97,53 @@
 
 ## Communication & APIs
 
-### Minecraft ↔ Node.js Communication
-**REST/HTTP (via @minecraft/server-net)**
-- Bedrock Script API sends HTTP POST requests
+### Minecraft ↔ Node.js Communication (Hybrid Architecture)
+
+#### REST/HTTP (via @minecraft/server-net)
+**Use Cases:** Request/response operations, one-time queries, stateless operations
+- Database queries (Layer 5: memory retrieval, episode writes)
+- AI model inference (Layer 2: vectorization, Layer 3: intent classification)
+- Configuration updates (AI mode switching)
+- Health checks and status endpoints
+- Idempotent operations that don't require real-time updates
+
+**Characteristics:**
 - Unidirectional request/response model
 - JSON payload format
-- No WebSocket support in Bedrock environment
+- Stateless (no persistent connection)
+- Built-in timeout handling
+- Simple error recovery (retry logic)
+
+#### WebSocket (Socket.IO via @minecraft/server-net)
+**Use Cases:** Real-time bidirectional communication, streaming data, state synchronization
+- Layer 4 → Bedrock: Working Memory updates (mood changes, focus shifts)
+- Layer 6 → Bedrock: LLM streaming responses (token-by-token dialogue)
+- Layer 7 → Bedrock: Real-time action commands (immediate task updates)
+- Brain Scheduler → Bedrock: Job queue status broadcasts
+- Bedrock → Backend: Continuous sensory stream (Layer 1 event flooding)
+- Multi-villager coordination (gossip system, collective learning)
+
+**Characteristics:**
+- Bidirectional, full-duplex communication
+- Persistent connection with automatic reconnection
+- Event-based messaging (pub/sub pattern)
+- Low latency (<10ms vs HTTP's 50-100ms)
+- Built-in acknowledgments and timeout support
+- Room-based broadcasting for multi-villager scenarios
+
+#### Hybrid Decision Matrix
+
+| Operation | Protocol | Reason |
+|-----------|----------|--------|
+| Memory Retrieval (Layer 5) | HTTP | One-time query, bulk data |
+| Episode Write (Layer 5) | HTTP | Fire-and-forget, async |
+| Vector Embedding (Layer 2) | HTTP | Batch processing, cacheable |
+| LLM Inference (Layer 6) | WebSocket | Stream tokens for UX responsiveness |
+| Working Memory Update (Layer 4) | WebSocket | Frequent state changes |
+| Action Commands (Layer 7) | WebSocket | Real-time task updates |
+| Sensory Events (Layer 1) | WebSocket | High-frequency stream |
+| Scheduler Status | WebSocket | Broadcast to multiple clients |
+| Config Updates | HTTP | Rare, stateless |
 
 ### API Documentation
 **Swagger/OpenAPI**
@@ -116,7 +157,16 @@
 - Promise-based HTTP requests
 - Request/response interceptors
 - Timeout configuration
-- Used for external LLM API calls
+- Used for external LLM API calls and REST operations
+
+### Real-Time Communication
+**Socket.IO v4**
+- Bidirectional WebSocket communication with HTTP long-polling fallback
+- Automatic reconnection with exponential backoff
+- Event acknowledgments for request/response patterns
+- Room-based broadcasting for multi-client scenarios
+- Connection state recovery for brief disconnections
+- Production-ready with built-in error handling
 
 ---
 
@@ -154,14 +204,16 @@
 ### Fast Gear (Layers 1-4)
 - **In-memory cache**: Native JavaScript `Map` (trackedVillagers)
 - **Bedrock Script API**: @minecraft/server, @minecraft/server-net
-- **Sync frequency**: 500ms - 2s
+- **Communication**: WebSocket (Socket.IO) for real-time streams, HTTP for queries
+- **Sync frequency**: 500ms - 2s (WebSocket push < 50ms latency)
 
 ### Slow Gear (Layers 5-7)
 - **Database**: PostgreSQL + pgvector
 - **Job Queue**: BullMQ + Redis
 - **LLM**: llama.cpp (HTTP API)
 - **AI Models**: @xenova/transformers
-- **Sync frequency**: 1-5s
+- **Communication**: HTTP for bulk operations, WebSocket for streaming LLM responses
+- **Sync frequency**: 1-5s (WebSocket streaming for real-time responses)
 
 ### Dual AI Mode Support
 - **MONOLITHIC Mode**: 5D vectors [C, V, I, S, X], full LLM cognitive load
@@ -194,6 +246,12 @@ DB_PASSWORD=***
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
+# WebSocket
+SOCKET_IO_PORT=3001
+ALLOWED_ORIGINS=http://localhost:*,https://yourdomain.com
+SOCKET_PING_TIMEOUT=20000
+SOCKET_PING_INTERVAL=25000
+
 # LLM
 LLM_API_URL=http://localhost:8080
 LLM_MODEL=llama-3-8b
@@ -217,11 +275,14 @@ NODE_ENV=production
 # Core dependencies (latest versions)
 npm install express@latest pg@latest @xenova/transformers@latest bullmq@latest ioredis@latest
 
+# Communication
+npm install socket.io@latest axios@latest
+
 # Validation & logging
 npm install joi@latest pino@latest pino-pretty@latest
 
-# Configuration & HTTP
-npm install dotenv@latest axios@latest
+# Configuration
+npm install dotenv@latest
 
 # API documentation
 npm install swagger-jsdoc@latest swagger-ui-express@latest
@@ -242,11 +303,13 @@ npm install -g pm2@latest
 - **@xenova/transformers**: Latest stable
 - **BullMQ**: v5.x
 - **ioredis**: v5.x
+- **Socket.IO**: v4.x
 - **Joi**: v17.x
 - **Pino**: v9.6.0
 - **PM2**: v5.x
 - **Vitest**: v3.1.1
 - **Sentry**: v8.x
+- **Axios**: v1.7.9
 
 ---
 
@@ -822,12 +885,196 @@ try {
 
 ---
 
+### Socket.IO
+
+#### Best Practices
+- **Event Naming**: Use namespaces for feature isolation (e.g., `/villagers`, `/admin`)
+- **Room Management**: Group villagers by area/dimension for efficient broadcasting
+- **Acknowledgments**: Use `emitWithAck()` for request/response patterns with timeout
+- **Connection Recovery**: Enable built-in state recovery for brief disconnections
+- **Event Registration**: Register event handlers once, outside `connect` event (prevents duplicates)
+- **Heartbeat Tuning**: Adjust `pingTimeout` and `pingInterval` for network conditions
+- **Memory Management**: Clear HTTP request reference with `rawSocket.request = null`
+
+#### Limitations
+- **HTTP Fallback Overhead**: Long-polling fallback increases latency if WebSocket fails
+- **Scaling Complexity**: Multi-server setups require Redis adapter or sticky sessions
+- **Message Size**: Large payloads (>1MB) should use HTTP chunking or compression
+- **No Built-in Compression**: Must enable `perMessageDeflate` manually (CPU overhead)
+- **Binary Data**: Less efficient than pure WebSocket for large binary transfers
+
+#### Common Pitfalls
+- ❌ **Registering Handlers in `connect`**: Causes duplicate handlers on reconnect
+- ❌ **No Timeout on Acknowledgments**: Requests hang forever without `socket.timeout()`
+- ❌ **Storing Socket References**: Sockets become invalid on disconnect (store socket.id instead)
+- ❌ **Broadcasting Without Rooms**: Inefficient to emit to all clients when targeting specific group
+- ❌ **Not Handling `disconnect`**: Memory leaks from not cleaning up listeners
+- ❌ **Synchronous Operations in Handlers**: Blocks event loop (use async/await)
+
+#### Conventions
+```javascript
+import { Server } from 'socket.io';
+import { createServer } from 'http';
+
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: process.env.ALLOWED_ORIGINS },
+  pingTimeout: 20000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling'],
+  allowUpgrades: true
+});
+
+// Memory optimization
+io.engine.on('connection', (rawSocket) => {
+  rawSocket.request = null; // Clear HTTP request reference
+});
+
+// Namespace for villager communication
+const villagerNamespace = io.of('/villagers');
+
+villagerNamespace.on('connection', (socket) => {
+  console.log(`Villager connected: ${socket.id}`);
+  
+  // Join room based on villager location
+  const villagerId = socket.handshake.query.villagerId;
+  const dimension = socket.handshake.query.dimension || 'overworld';
+  socket.join(`${dimension}`);
+  socket.join(`villager:${villagerId}`);
+  
+  // ✅ Event handlers registered once
+  socket.on('sensory-event', async (data) => {
+    // Process Layer 1 sensory stream
+    await handleSensoryEvent(villagerId, data);
+  });
+  
+  // ✅ Request/response with timeout and acknowledgment
+  socket.on('memory-query', async (query, callback) => {
+    try {
+      const result = await queryMemory(villagerId, query);
+      callback({ success: true, data: result });
+    } catch (error) {
+      callback({ success: false, error: error.message });
+    }
+  });
+  
+  // ✅ Cleanup on disconnect
+  socket.on('disconnect', (reason) => {
+    console.log(`Villager disconnected: ${socket.id}, reason: ${reason}`);
+    // Clean up any villager-specific resources
+    cleanupVillagerResources(villagerId);
+  });
+  
+  // Handle reconnection
+  socket.on('connect', () => {
+    if (socket.recovered) {
+      console.log(`Session recovered for ${socket.id}`);
+    } else {
+      console.log(`New session for ${socket.id}`);
+    }
+  });
+});
+
+// ✅ Broadcasting to specific rooms
+function broadcastWorkingMemoryUpdate(villagerId, memoryState) {
+  villagerNamespace.to(`villager:${villagerId}`).emit('working-memory-update', memoryState);
+}
+
+// ✅ Broadcasting to dimension (all villagers in overworld)
+function broadcastDimensionEvent(dimension, eventData) {
+  villagerNamespace.to(dimension).emit('dimension-event', eventData);
+}
+
+// ✅ Request/response from server with timeout
+async function requestActionFromVillager(villagerId, actionData) {
+  const sockets = await villagerNamespace.in(`villager:${villagerId}`).fetchSockets();
+  if (sockets.length === 0) throw new Error('Villager not connected');
+  
+  const socket = sockets[0];
+  try {
+    const response = await socket.timeout(5000).emitWithAck('execute-action', actionData);
+    return response;
+  } catch (error) {
+    throw new Error(`Action timeout: ${error.message}`);
+  }
+}
+
+httpServer.listen(3000);
+```
+
+#### Hybrid HTTP + WebSocket Pattern
+```javascript
+// Express HTTP routes (stateless operations)
+app.post('/api/episodes', async (req, res) => {
+  const { villagerId, episodeData } = req.body;
+  await saveEpisode(villagerId, episodeData);
+  res.json({ success: true });
+});
+
+app.get('/api/memory/:villagerId', async (req, res) => {
+  const memory = await queryMemory(req.params.villagerId);
+  res.json(memory);
+});
+
+// Socket.IO for real-time updates (stateful operations)
+villagerNamespace.on('connection', (socket) => {
+  // Real-time sensory stream (Layer 1)
+  socket.on('sensory-stream', (eventData) => {
+    processSensoryEvent(eventData);
+  });
+  
+  // Bidirectional working memory sync (Layer 4)
+  socket.on('mood-change', (moodData) => {
+    updateWorkingMemory(socket.villagerId, moodData);
+    // Broadcast to other connected clients
+    socket.broadcast.to(`villager:${socket.villagerId}`).emit('mood-update', moodData);
+  });
+});
+
+// Server-initiated push (Layer 6 → Bedrock)
+async function streamLLMResponse(villagerId, prompt) {
+  const sockets = await villagerNamespace.in(`villager:${villagerId}`).fetchSockets();
+  if (sockets.length === 0) return;
+  
+  const socket = sockets[0];
+  
+  // Stream tokens as they're generated
+  for await (const token of generateLLMTokens(prompt)) {
+    socket.emit('llm-token', { token });
+  }
+  socket.emit('llm-complete');
+}
+```
+
+#### When to Use HTTP vs WebSocket
+
+**Use HTTP When:**
+- ✅ One-time data fetches (memory queries, config reads)
+- ✅ Bulk operations (batch episode writes, migrations)
+- ✅ Cacheable responses (vectorization, concept lookups)
+- ✅ Idempotent operations (safe to retry)
+- ✅ External API calls (llama.cpp, third-party services)
+- ✅ Stateless operations
+
+**Use WebSocket When:**
+- ✅ High-frequency updates (Layer 1 sensory events)
+- ✅ Bidirectional state sync (working memory)
+- ✅ Real-time notifications (action commands, task updates)
+- ✅ Streaming responses (LLM token-by-token)
+- ✅ Multi-client coordination (gossip, collective learning)
+- ✅ Low-latency requirements (<50ms)
+- ✅ Persistent connection beneficial
+
+---
+
 **Next Steps:**
 1. Set up PostgreSQL 18 with pgvector extension
 2. Install and configure Redis 7+
 3. Initialize project with `npm install @latest`
 4. Run database migrations (`npm run db:schema`)
 5. Configure llama.cpp HTTP server
-6. Create PM2 ecosystem.config.js
-7. Initialize Sentry project and obtain DSN
-8. Download and cache AI models with @xenova/transformers
+6. Set up Socket.IO server with namespace configuration
+7. Create PM2 ecosystem.config.js
+8. Initialize Sentry project and obtain DSN
+9. Download and cache AI models with @xenova/transformers
+10. Configure CORS for WebSocket connections
