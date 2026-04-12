@@ -24,7 +24,7 @@ High-frequency operations optimized for game tick performance (<5ms per event):
    - **S** (Sociality): Friendly vs. Hostile intent
    - **X** (Complexity): Systemic vs. Random logic
 3. **Sequencer (Temporal):** Groups vectors into coherent "Episodes"
-4. **Working Memory:** Tracks active focus and emotional state via DynamicProperties
+4. **Working Memory:** Tracks active focus and emotional state in the `trackedVillagers` in-memory cache (DynamicProperties as backup persistence)
 
 ### Slow Gear (Layers 5-7) — Node.js Backend
 
@@ -66,28 +66,33 @@ Optimizes LLM calls via batching and prioritization to prevent server lag.
 
 ```
 Immersive_Villagers BP/
-├── scripts/                    # Fast Gear (Layers 1-4)
-│   ├── layers/                 # Core cognitive layers
-│   ├── ui/                     # Player interaction menus
-│   ├── utils/                  # Helper functions
-│   ├── config/                 # Constants and rules
-│   ├── events/                 # Event listeners
-│   └── main.js                 # Entry point
+├── scripts/                    # Bedrock Script API (Fast Gear)
+│   ├── layers/                 # L1–L4 cognitive layers (cache-first)
+│   ├── systems/                # Cross-cutting systems (debug, lifecycle, etc.)
+│   ├── utils/                  # Shared helpers (network, geometry, batching, etc.)
+│   ├── sandbox/                # Experiments (must stay isolated)
+│   └── main.js                 # Script entry point
 │
-├── nodeDB/                     # Slow Gear (Layers 5-7)
-│   ├── db/                     # PostgreSQL pool & schema
-│   ├── queries/                # Database operations
-│   ├── routes/                 # Express API endpoints
-│   ├── brain/                  # LLM scheduler & client
-│   ├── middleware/             # Validation & logging
-│   └── app.js                  # Backend entry point
+├── nodeDB/                     # Node.js backend (Slow Gear)
+│   ├── routes/                 # Route definitions (thin)
+│   ├── api/                    # Handler/adapters (optional separation)
+│   ├── brain/                  # Scheduler + LLM client + cognition services
+│   ├── db/                     # PostgreSQL pool + schema + migrations
+│   ├── queries/                # Parameterized SQL modules
+│   ├── utils/                  # Logger, validation, shared helpers
+│   ├── app.js                  # Express app wiring
+│   └── server.js               # Backend entry point
 │
-└── _docs/                      # Architecture documentation
-    ├── project-overview.md     # Vision & cognitive architecture
-    ├── tech-stack.md           # Technology choices & best practices
-    ├── interaction-flow.md     # Complete data flow diagrams
-    ├── project-rules.md        # Directory structure & conventions
-    └── phases/                 # Implementation phase plans
+├── _docs_v2/                   # Architecture & rules documentation
+│   ├── project-overview.md
+│   ├── tech-stack.md
+│   ├── interaction-flow.md
+│   ├── project-rules.md        # Directory structure & conventions (source of truth)
+│   └── Brain Layers/
+│
+├── entities/                   # BP entity definitions
+├── functions/                  # BP functions (.mcfunction, etc.)
+└── loot_tables/                # BP loot tables
 ```
 
 ---
@@ -287,7 +292,7 @@ LOG_LEVEL=debug
 
 ### Setup
 
-See `_docs/phases/phase0-setup.md` for detailed installation instructions.
+See `_docs_v2/tech-stack.md` for current setup notes (and update this README when adding a dedicated setup guide).
 
 ---
 

@@ -66,4 +66,4 @@ scripts/: All Bedrock-side Script API code (The Fast Gear).
 
 nodeDB/: Express.js, SQL logic, and LLM orchestration (The Slow Gear).
 
-\_docs/: Architectural documentation and phase plans.
+\_docs_v2/: Architectural documentation and phase plans.

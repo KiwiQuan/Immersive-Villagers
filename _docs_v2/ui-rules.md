@@ -1706,33 +1706,35 @@ Create texture pack with icons at `textures/icons/`:
 
 ```
 scripts/
-  debug/
-    forms/
-      mainMenu.js          → Main debug menu (Form 1)
-      brainMonitor.js      → Brain Monitor form (Form 3)
-      workingMemory.js     → Working Memory form (Form 4)
-      llmContext.js        → LLM Context form (Form 5)
-      relationships.js     → Relationships forms (Form 6)
-      performance.js       → Performance form (Form 7)
-      structures.js        → Structure forms (Form 8)
-      settings.js          → Settings form (Form 9)
-    
-    commands/
-      commandRouter.js     → Main chat command parser
-      brainCommands.js     → Brain-related handlers
-      memoryCommands.js    → Memory-related handlers
-      llmCommands.js       → LLM-related handlers
-      perfCommands.js      → Performance handlers
-      watchCommands.js     → Watch mode handlers
-      villagerCommands.js  → Villager management
-    
-    components/
-      formatters.js        → Timestamp, duration, vector formatters
-      statusIndicators.js  → Status emojis and labels
-      dataFetchers.js      → Network calls to backend
-      cacheAccessors.js    → trackedVillagers Map accessors
-    
-    debugMain.js           → Entry point, event subscriptions
+  systems/
+    debug/
+      forms/
+        main_menu_form.js        → Main debug menu (Form 1)
+        villager_selector_form.js→ Villager selector (Form 2)
+        brain_monitor_form.js    → Brain Monitor form (Form 3)
+        working_memory_form.js   → Working Memory form (Form 4)
+        llm_context_form.js      → LLM Context form (Form 5)
+        relationships_form.js    → Relationships forms (Form 6)
+        performance_form.js      → Performance form (Form 7)
+        structures_form.js       → Structure forms (Form 8)
+        settings_form.js         → Settings form (Form 9)
+
+      commands/
+        command_router.js        → Main chat command parser
+        brain_commands.js        → Brain-related handlers
+        memory_commands.js       → Memory-related handlers
+        llm_commands.js          → LLM-related handlers
+        perf_commands.js         → Performance handlers
+        watch_commands.js        → Watch mode handlers
+        villager_commands.js     → Villager management
+
+      components/
+        formatters.js            → Timestamp, duration, vector formatters
+        status_indicators.js     → Status emojis and labels
+        data_fetchers.js         → Backend network calls (HTTP/WS)
+        cache_accessors.js       → `trackedVillagers` Map accessors
+
+      debug_main.js              → Entry point, event subscriptions
 ```
 
 ---
